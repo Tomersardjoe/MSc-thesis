@@ -156,7 +156,6 @@ def write_flattened_matrix(matrix, outfile, label_name="Gene"):
     meta_cols = [label_name, "", " "]
     genome_cols = [col for col in matrix.columns if col not in meta_cols]
     matrix = matrix[meta_cols + genome_cols]
-    print("🧬 Final export columns:", matrix.columns.tolist())
 
     # Export
     matrix.index.name = None
@@ -168,9 +167,6 @@ def main():
     """Main preprocessing pipeline."""
     infile, outfile, roary = get_args()
     matrix = pd.read_csv(infile, header=0, dtype=str, index_col=None)
-    print("\n📥 Initial input matrix shape:", matrix.shape)
-    print("📄 Initial column headers:", matrix.columns.tolist())
-    print("🔎 First few rows:\n", matrix.head())
 
     # Detect input data type and assign metadata columns accordingly
     if roary:
@@ -195,20 +191,7 @@ def main():
         matrix = matrix.iloc[:, 1:]
         simulated = True
 
-    print("\n✅ Matrix index after format detection:")
-    print("🔢 Index type:", type(matrix.index))
-    print("🧬 Index levels:", matrix.index.nlevels)
-    print("🧾 Index names:", matrix.index.names)
-    print("👁️ First few index entries:", matrix.index[:5])
-
     matrix = rf.preprocess_df(matrix, 0, 0, 0)
-
-    print("\n🧪 After preprocess_df:")
-    print("🔢 Index type:", type(matrix.index))
-    print("🧬 Index levels:", matrix.index.nlevels)
-    print("🧾 Index names:", matrix.index.names)
-    print("📐 Matrix shape:", matrix.shape)
-
 
     print("Writing singletons, core and constant genes")
     matrix = write_gene_lists(matrix)
@@ -231,11 +214,6 @@ def main():
 
         matrix.index.name = None
         matrix.reset_index(drop=True, inplace=True)
-        print("\n🧾 Columns before export (simulated):", matrix.columns.tolist())
-        print("👁️ First few rows:\n", matrix.head())
-        print("🔢 Index type:", type(matrix.index))
-        print("🧬 Index levels:", matrix.index.nlevels)
-        print("🧾 Index names:", matrix.index.names)
 
         write_flattened_matrix(matrix, outfile, label_name="Gene")
     else:
