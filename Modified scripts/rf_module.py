@@ -81,52 +81,59 @@ def preprocess_df(table, null_h, min_missing, min_present):
 
 def update_performance(table, i, y_sets):
     """Update the performance table."""
-    #number of genomes present
-    table['count'][i] = sum(list(y_sets[0]))
+    
+    # Number of genomes present
+    table.loc[i, 'count'] = sum(list(y_sets[0]))
+
     cm_train = confusion_matrix(y_sets[1], y_sets[3])
     cm_test = confusion_matrix(y_sets[2], y_sets[4])
-    #stats for training set
-    table['TPtr'][i] = cm_train[1,1]
-    table['FPtr'][i] = cm_train[0,1]
-    table['TNtr'][i] = cm_train[0,0]
-    table['FNtr'][i] = cm_train[1,0]
-    #stats for test set
-    table['TPte'][i] = cm_test[1,1]
-    table['FPte'][i] = cm_test[0,1]
-    table['TNte'][i] = cm_test[0,0]
-    table['FNte'][i] = cm_test[1,0]
-    #reports for recall, precision, f1, accuracy
-    train_report = classification_report(y_sets[1], y_sets[3],
-                                         output_dict = True,
-                                         zero_division = 0)
-    test_report = classification_report(y_sets[2], y_sets[4],
-                                        output_dict = True,
-                                        zero_division = 0)
-    table['Etr'][i] = 1 - train_report['accuracy']
-    table['Ete'][i] = 1 - test_report['accuracy']
-    table['Atr'][i] = train_report['accuracy']
-    table['Ate'][i] = test_report['accuracy']
-    #precisions - 1, 0 and average
-    table['P1tr'][i] = train_report['1']['precision']
-    table['P0tr'][i] = train_report['0']['precision']
-    table['Ptr'][i] = train_report['macro avg']['precision']
-    table['P1te'][i] = test_report['1']['precision']
-    table['P0te'][i] = test_report['0']['precision']
-    table['Pte'][i] = test_report['macro avg']['precision']
-    #recalls - 1, 0 and average
-    table['R1tr'][i] = train_report['1']['recall']
-    table['R0tr'][i] = train_report['0']['recall']
-    table['Rtr'][i] = train_report['macro avg']['recall']
-    table['R1te'][i] = test_report['1']['recall']
-    table['R0te'][i] = test_report['0']['recall']
-    table['Rte'][i] = test_report['macro avg']['recall']
-    #f1 scores - 1, 0 and average
-    table['F1tr'][i] = train_report['1']['f1-score']
-    table['F0tr'][i] = train_report['0']['f1-score']
-    table['Ftr'][i] = train_report['macro avg']['f1-score']
-    table['F1te'][i] = test_report['1']['f1-score']
-    table['F0te'][i] = test_report['0']['f1-score']
-    table['Fte'][i] = test_report['macro avg']['f1-score']
+
+    # Training metrics
+    table.loc[i, 'TPtr'] = cm_train[1,1]
+    table.loc[i, 'FPtr'] = cm_train[0,1]
+    table.loc[i, 'TNtr'] = cm_train[0,0]
+    table.loc[i, 'FNtr'] = cm_train[1,0]
+
+    # Testing metrics
+    table.loc[i, 'TPte'] = cm_test[1,1]
+    table.loc[i, 'FPte'] = cm_test[0,1]
+    table.loc[i, 'TNte'] = cm_test[0,0]
+    table.loc[i, 'FNte'] = cm_test[1,0]
+
+    # Reports for recall, precision, f1, accuracy
+    train_report = classification_report(y_sets[1], y_sets[3], output_dict=True, zero_division=0)
+    test_report = classification_report(y_sets[2], y_sets[4], output_dict=True, zero_division=0)
+
+    # Accuracy and error
+    table.loc[i, 'Etr'] = 1 - train_report['accuracy']
+    table.loc[i, 'Ete'] = 1 - test_report['accuracy']
+    table.loc[i, 'Atr'] = train_report['accuracy']
+    table.loc[i, 'Ate'] = test_report['accuracy']
+
+    # Precision
+    table.loc[i, 'P1tr'] = train_report['1']['precision']
+    table.loc[i, 'P0tr'] = train_report['0']['precision']
+    table.loc[i, 'Ptr'] = train_report['macro avg']['precision']
+    table.loc[i, 'P1te'] = test_report['1']['precision']
+    table.loc[i, 'P0te'] = test_report['0']['precision']
+    table.loc[i, 'Pte'] = test_report['macro avg']['precision']
+
+    # Recall
+    table.loc[i, 'R1tr'] = train_report['1']['recall']
+    table.loc[i, 'R0tr'] = train_report['0']['recall']
+    table.loc[i, 'Rtr'] = train_report['macro avg']['recall']
+    table.loc[i, 'R1te'] = test_report['1']['recall']
+    table.loc[i, 'R0te'] = test_report['0']['recall']
+    table.loc[i, 'Rte'] = test_report['macro avg']['recall']
+
+    # F1
+    table.loc[i, 'F1tr'] = train_report['1']['f1-score']
+    table.loc[i, 'F0tr'] = train_report['0']['f1-score']
+    table.loc[i, 'Ftr'] = train_report['macro avg']['f1-score']
+    table.loc[i, 'F1te'] = test_report['1']['f1-score']
+    table.loc[i, 'F0te'] = test_report['0']['f1-score']
+    table.loc[i, 'Fte'] = test_report['macro avg']['f1-score']
+
 
 
 def fit_classifiers(table, results, params, output, checkpoint):
