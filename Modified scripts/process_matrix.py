@@ -151,8 +151,11 @@ def main():
     print("Collapsing identical genes and genomes")
     matrix = collapse_genes(matrix, outdir, simulated)
     matrix = collapse_genomes(matrix, outdir)
+    
+    # Stratification compatibility
+    matrix = matrix[matrix.sum(axis=1) > 1] # Keep genes present in at least 2 genomes
+    matrix = matrix[(matrix.shape[1] - matrix.sum(axis=1)) >= 2] # Keep genes absent in at least 2 genomes
 
-    matrix = matrix[matrix.sum(axis=1) > 1]
 
     print("Writing collapsed matrix")
     if simulated:
