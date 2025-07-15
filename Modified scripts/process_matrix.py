@@ -1,192 +1,144 @@
 #!/usr/bin/env python3
-"""Process the matrix so that it's ready for analysis."""
 
 import argparse
-import re
+import os
 import sys
 import math
 import pandas as pd
 import rf_module as rf
 
-
 def get_args():
-    """Get user arguments."""
+    """Parse and validate command-line arguments."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--infile", dest="infile",
-                        type=str, help="input file")
-    parser.add_argument("-r", "--roary", dest="roary",
-                        help="toggle for roary input", action="store_true")
-    parser.add_argument("-o", "--output", dest="outfile",
-                        type=str, help="Output matrix file")
+    parser.add_argument("-i", "--infile", dest="infile", type=str)
+    parser.add_argument("-r", "--roary", dest="roary", action="store_true")
+    parser.add_argument("-o", "--output", dest="outfile", type=str)
+    parser.add_argument("-d", "--directory", dest="outdir", type=str, default="process_matrix_outfiles")
     args = parser.parse_args()
     if None in [args.infile, args.outfile]:
         parser.print_help(sys.stderr)
         sys.exit(0)
-    return [args.infile, args.outfile, args.roary]
+    return [args.infile, args.outfile, args.roary, args.outdir]
 
-
-# MODIFICATION [Detect whether input is simulated or real and build 3-level index]
-def ensure_index_format(matrix):
-    """Ensure matrix has a 3-level index: Gene, Non-unique Gene name, Annotation."""
-    if matrix.index.nlevels == 1:
-        matrix.index = pd.MultiIndex.from_arrays(
-            [matrix.index, [''] * len(matrix), [''] * len(matrix)],
-            names=['Gene', 'Non-unique Gene name', 'Annotation']
-        )
-        return matrix, True  # Simulated input
-    return matrix, False
-
-
-# MODIFICATION [Safely create MultiIndex with correct level names]
 def safe_multiindex_from_tuples(tuples, original_names):
-    """Safely create MultiIndex with matching name count."""
+    """Create a safe MultiIndex with adjusted level names."""
     level_count = len(tuples[0])
-    if len(original_names) < level_count:
-        names = original_names + [''] * (level_count - len(original_names))
-    else:
-        names = original_names[:level_count]
+    names = original_names[:level_count] + [''] * (level_count - len(original_names))
     return pd.MultiIndex.from_tuples(tuples, names=names)
 
+def write_gene_lists(matrix, outdir):
+    """Identify and write constant genes, core genes, and singletons to text files."""
+    constant = matrix[matrix.sum(axis=1) == matrix.shape[1]].index
+    core = matrix[matrix.sum(axis=1) >= math.ceil(0.05 * matrix.shape[1])].index
+    singletons = matrix[matrix.sum(axis=1) == 1].index
 
-def write_gene_lists(matrix):
-    """Write and filter constant, core, and singleton gene families."""
-    constant = list(matrix[matrix.sum(axis=1) == matrix.shape[1]].index)
-    threshold = math.ceil(0.05 * matrix.shape[1])
-    core = list(matrix[matrix.sum(axis=1) >= threshold].index)
-    singletons = list(matrix[matrix.sum(axis=1) == 1].index)
-
-    with open("constant_genes.txt", "w", encoding="utf-8") as out:
+    with open(os.path.join(outdir, "constant_genes.txt"), "w") as out:
         out.write("\n".join(map(str, constant)))
-    with open("core_genes.txt", "w", encoding="utf-8") as out:
+    with open(os.path.join(outdir, "core_genes.txt"), "w") as out:
         out.write("\n".join(map(str, core)))
-    with open("singletons.txt", "w", encoding="utf-8") as out:
+    with open(os.path.join(outdir, "singletons.txt"), "w") as out:
         out.write("\n".join(map(str, singletons)))
 
-    matrix = matrix.drop(index=constant)
-    matrix = matrix.drop(index=singletons)
+    matrix = matrix.drop(index=constant.union(singletons))
     return matrix
 
-
-# MODIFICATION [Collapse gene families using consistent MultiIndex format]
-def collapse_genes(matrix, simulated=False):
-    """Collapse genes with identical presence/absence patterns."""
+def collapse_genes(matrix, outdir, simulated=False):
+    """Collapse genes with identical presence/absence profiles into families."""
     collapsed_rows = pd.DataFrame(columns=matrix.columns)
     identical_sets = {}
-    count = 0
-    pattern = 0
+    pattern = None
     indices = []
 
-    non_unique = matrix[matrix.duplicated(keep=False)]
-    non_unique = non_unique.sort_values(by=list(non_unique.columns))
+    non_unique = matrix[matrix.duplicated(keep=False)].sort_values(by=list(matrix.columns))
 
-    for i in range(len(non_unique.index)):
-        if list(non_unique.iloc[i]) == pattern:
-            identical_sets[f"family_group_{count}"].append(non_unique.iloc[i].name)
+    for i, row in non_unique.iterrows():
+        current = list(row)
+        if current == pattern:
+            identical_sets[group].append(i)
         else:
-            collapsed_rows.loc[count] = list(non_unique.iloc[i])
-            pattern = list(non_unique.iloc[i])
-            count += 1
-            index_tuple = (f"family_group_{count}", "", "family_group")
-            indices.append(index_tuple)
-            identical_sets[f"family_group_{count}"] = [non_unique.iloc[i].name]
+            pattern = current
+            group = f"family_group_{len(identical_sets)+1}"
+            collapsed_rows.loc[len(identical_sets)] = current
+            indices.append((group, "", "family_group"))
+            identical_sets[group] = [i]
 
-    # MODIFICATION [Use safe_multiindex_from_tuples to avoid index errors]
     collapsed_rows.index = safe_multiindex_from_tuples(indices, matrix.index.names)
 
-    with open("non-unique_genes.csv", "w", encoding="utf-8") as out:
+    with open(os.path.join(outdir, "non-unique_genes.csv"), "w") as out:
         for key, value in identical_sets.items():
-            out.write(key + "\t" + ",".join(map(str, value)) + "\n")
+            out.write(f"{key}\t{','.join(map(str, value))}\n")
 
     matrix = matrix.drop_duplicates(keep=False)
-    matrix = pd.concat([matrix, collapsed_rows])
-    return matrix
+    return pd.concat([matrix, collapsed_rows])
 
-
-def collapse_genomes(matrix):
-    """Collapse genomes with identical presence absence patterns."""
+def collapse_genomes(matrix, outdir):
+    """Collapse genomes with identical gene family profiles into unified groups."""
     matrix = matrix.transpose()
-    collapsed_genomes = pd.DataFrame(columns=matrix.columns)
+    collapsed = pd.DataFrame(columns=matrix.columns)
     identical_sets = {}
-    count = 0
-    pattern = 0
+    pattern = None
     indices = []
 
-    non_unique = matrix[matrix.duplicated(keep=False)]
-    non_unique = non_unique.sort_values(by=list(non_unique.columns))
+    non_unique = matrix[matrix.duplicated(keep=False)].sort_values(by=list(matrix.columns))
 
-    for i in range(len(non_unique.index)):
-        if list(non_unique.iloc[i]) == pattern:
-            identical_sets[f"genome_group_{count}"].append(non_unique.iloc[i].name)
+    for i, row in non_unique.iterrows():
+        current = list(row)
+        if current == pattern:
+            identical_sets[group].append(i)
         else:
-            pattern = list(non_unique.iloc[i])
-            collapsed_genomes.loc[count] = list(non_unique.iloc[i])
-            count += 1
-            indices.append(f"genome_group_{count}")
-            identical_sets[f"genome_group_{count}"] = [non_unique.iloc[i].name]
+            pattern = current
+            group = f"genome_group_{len(identical_sets)+1}"
+            collapsed.loc[len(identical_sets)] = current
+            indices.append(group)
+            identical_sets[group] = [i]
 
-    collapsed_genomes.index = indices
+    collapsed.index = indices
 
-    with open("non-unique_genomes.csv", "w", encoding="utf-8") as out:
+    with open(os.path.join(outdir, "non-unique_genomes.csv"), "w") as out:
         for key, value in identical_sets.items():
-            out.write(key + "\t" + ",".join(map(str, value)) + "\n")
+            out.write(f"{key}\t{','.join(map(str, value))}\n")
 
     matrix = matrix.drop_duplicates(keep=False)
-    matrix = pd.concat([matrix, collapsed_genomes])
-    matrix = matrix.transpose()
-    return matrix
-
+    return pd.concat([matrix, collapsed]).transpose()
 
 def convert_roary(roary_matrix):
-    """Convert Roary matrix into Panaroo format."""
+    """Format Roary input to conform with standard metadata structure."""
     index = roary_matrix.index
-    names = index.names
-    new_index = [(ind[0], ind[1], ind[2].replace(",", ";")) for ind in index]
-    roary_matrix.index = pd.MultiIndex.from_tuples(new_index, names=names)
-    roary_matrix = roary_matrix.replace(",", ";", regex=True)
-    roary_matrix.drop(roary_matrix.columns[range(11)], axis=1, inplace=True)
-    return roary_matrix
+    roary_matrix.index = pd.MultiIndex.from_tuples(
+        [(i[0], i[1], i[2].replace(",", ";")) for i in index],
+        names=index.names
+    )
+    roary_matrix.replace(",", ";", regex=True, inplace=True)
+    return roary_matrix.drop(roary_matrix.columns[:11], axis=1)
 
-# MODIFICATION [Flatten nested tuple to access index elements]
 def write_flattened_matrix(matrix, outfile, label_name="Gene"):
-    """Export flattened matrix for simulated data with proper metadata structure."""
-
-    matrix = matrix.copy()
-
-    # Reorder columns
+    """Export matrix with unpacked metadata for simulated input."""
     meta_cols = [label_name, "", " "]
-    genome_cols = [col for col in matrix.columns if col not in meta_cols]
+    genome_cols = [c for c in matrix.columns if c not in meta_cols]
     matrix = matrix[meta_cols + genome_cols]
-
-    # Export
     matrix.index.name = None
     matrix.reset_index(drop=True, inplace=True)
     matrix.to_csv(outfile, index=False, sep=",", doublequote=False, quoting=0)
 
-# MODIFICATION [Handle real vs simulated input and apply complete pipeline]
 def main():
-    """Main preprocessing pipeline."""
-    infile, outfile, roary = get_args()
-    matrix = pd.read_csv(infile, header=0, dtype=str, index_col=None)
+    """Run complete preprocessing pipeline."""
+    infile, outfile, roary, outdir = get_args()
+    os.makedirs(outdir, exist_ok=True)
+    outfile = os.path.join(outdir, os.path.basename(outfile))
 
-    # Detect input data type and assign metadata columns accordingly
+    matrix = pd.read_csv(infile, dtype=str)
+    simulated = False
+
     if roary:
-        # Roary input has extra metadata columns upfront
-        metadata_cols = ["Gene", "Non-unique Gene name", "Annotation"]
-        matrix.columns = metadata_cols + list(matrix.columns[len(metadata_cols):])
-        matrix.index = pd.MultiIndex.from_frame(matrix[metadata_cols])
-        matrix = matrix.drop(columns=metadata_cols)
+        meta = ["Gene", "Non-unique Gene name", "Annotation"]
+        matrix.index = pd.MultiIndex.from_frame(matrix[meta])
+        matrix = matrix.drop(columns=meta)
         matrix = convert_roary(matrix)
-        simulated = False
-
-    elif matrix.shape[1] >= 3 and set(matrix.columns[:3]) == {"Gene", "Non-unique Gene name", "Annotation"}:
-        # Panaroo-style input with exactly 3 metadata columns
-        metadata_cols = ["Gene", "Non-unique Gene name", "Annotation"]
-        matrix.index = pd.MultiIndex.from_frame(matrix[metadata_cols])
-        matrix = matrix.drop(columns=metadata_cols)
-        simulated = False
-
+    elif set(matrix.columns[:3]) == {"Gene", "Non-unique Gene name", "Annotation"}:
+        meta = ["Gene", "Non-unique Gene name", "Annotation"]
+        matrix.index = pd.MultiIndex.from_frame(matrix[meta])
+        matrix = matrix.drop(columns=meta)
     else:
-        # Simulated input with only Gene column
         matrix.index = pd.Index(matrix.iloc[:, 0].astype(str), name="Gene")
         matrix = matrix.iloc[:, 1:]
         simulated = True
@@ -194,40 +146,28 @@ def main():
     matrix = rf.preprocess_df(matrix, 0, 0, 0)
 
     print("Writing singletons, core and constant genes")
-    matrix = write_gene_lists(matrix)
+    matrix = write_gene_lists(matrix, outdir)
 
     print("Collapsing identical genes and genomes")
-    matrix = collapse_genes(matrix, simulated)
-    matrix = collapse_genomes(matrix)
+    matrix = collapse_genes(matrix, outdir, simulated)
+    matrix = collapse_genomes(matrix, outdir)
 
-    # MODIFICATION [Avoid singleton families created by collapsing]
     matrix = matrix[matrix.sum(axis=1) > 1]
 
-    # MODIFICATION [Conditional output formatting]
     print("Writing collapsed matrix")
     if simulated:
-        # Unpack index tuples into columns before writing
-        matrix = matrix.copy()
-        matrix["Gene"] = [idx[0] if isinstance(idx, tuple) else idx for idx in matrix.index]
-        matrix[""] = [idx[1] if isinstance(idx, tuple) and len(idx) > 1 else "" for idx in matrix.index]
-        matrix[" "] = [idx[2] if isinstance(idx, tuple) and len(idx) > 2 else "" for idx in matrix.index]
-
-        matrix.index.name = None
-        matrix.reset_index(drop=True, inplace=True)
-
-        write_flattened_matrix(matrix, outfile, label_name="Gene")
+        matrix["Gene"] = [i[0] if isinstance(i, tuple) else i for i in matrix.index]
+        matrix[""] = [i[1] if isinstance(i, tuple) and len(i) > 1 else "" for i in matrix.index]
+        matrix[" "] = [i[2] if isinstance(i, tuple) and len(i) > 2 else "" for i in matrix.index]
+        write_flattened_matrix(matrix, outfile)
     else:
-        matrix = matrix.copy()
-        matrix["Gene"] = [idx[0] for idx in matrix.index]
-        matrix["Non-unique Gene name"] = [idx[1] for idx in matrix.index]
-        matrix["Annotation"] = [idx[2] for idx in matrix.index]
+        matrix["Gene"] = [i[0] for i in matrix.index]
+        matrix["Non-unique Gene name"] = [i[1] for i in matrix.index]
+        matrix["Annotation"] = [i[2] for i in matrix.index]
         matrix.reset_index(drop=True, inplace=True)
-
-        # Reoder columns
         meta_cols = ["Gene", "Non-unique Gene name", "Annotation"]
-        genome_cols = [col for col in matrix.columns if col not in meta_cols]
+        genome_cols = [c for c in matrix.columns if c not in meta_cols]
         matrix = matrix[meta_cols + genome_cols]
-
         matrix.to_csv(outfile, sep=",", index=False, doublequote=False, quoting=0)
 
 if __name__ == "__main__":
