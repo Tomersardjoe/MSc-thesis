@@ -62,7 +62,13 @@ def collapse_genes(matrix, outdir, simulated=False):
             indices.append((group, "", "family_group"))
             identical_sets[group] = [i]
 
-    collapsed_rows.index = safe_multiindex_from_tuples(indices, matrix.index.names)
+    if indices:
+        print(f"Found {len(indices)} duplicate gene entries.")
+        collapsed_rows.index = safe_multiindex_from_tuples(indices, matrix.index.names)
+    else:
+        print("No duplicate genes found. Skipping collapsing step.")
+        collapsed_rows.index = pd.MultiIndex.from_tuples([], names=matrix.index.names)
+
 
     with open(os.path.join(outdir, "non-unique_genes.csv"), "w") as out:
         for key, value in identical_sets.items():
