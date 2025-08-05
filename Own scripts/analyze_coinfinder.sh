@@ -1,15 +1,37 @@
 #!/bin/bash
 
+# 🛡️ Safety check for root folder
+if [ -z "$1" ]; then
+    echo "⚠️ Usage: $0 <root_directory>"
+    exit 1
+fi
+
 folder="$1"
 
-if [ ! -d "$folder" ]; then
-    echo "❌ Error: '$folder' is not a valid directory."
-    exit 1
+echo "📂 Analyze ALL subdirectories under '$folder'? [Y/n]:"
+read analyze_all
+analyze_all=${analyze_all:-y}
+
+if [ "$analyze_all" = "y" ]; then
+    sim_dirs=$(find "$folder" -mindepth 1 -maxdepth 1 -type d)
+else
+    echo "📝 Enter subdirectories to analyze (full paths or relative to '$folder'), separated by spaces:"
+    read -a user_dirs
+    sim_dirs="${user_dirs[@]}"
+fi
+
+echo "📤 Write results to CSV file? [y/N]:"
+read write_csv
+write_csv=${write_csv:-n}
+
+# Initialize CSV header if selected
+if [ "$write_csv" = "y" ]; then
+    echo "Dataset,Total_Pangenome_Genes,Total_Networked_Genes,Possible_Gene_Pairs,Significant_Associations,Association_Rate,Module_Count,Avg_Genes_per_Module,Avg_Degree,Modularity" > coinfinder_summary.csv
 fi
 
 echo -e "\n📁 Analyzing Coinfinder outputs in: $folder\n"
 
-for sim_dir in "$folder"/*; do
+for sim_dir in $sim_dirs; do
     [ -d "$sim_dir" ] || continue
     prefix=$(basename "$sim_dir")
 
@@ -51,12 +73,11 @@ for sim_dir in "$folder"/*; do
         module_count=$(cut -f2 "$components" | sort | uniq -c | wc -l)
         echo "   🧩 Module Count: $module_count"
 
-        # Run Python script and collect metrics
         metrics_output=$(python3 network_metrics.py "$sim_dir")
 
-        avg_module_size=$(echo "$metrics_output" | grep "Avg. Module Size" | awk -F ': ' '{print $2}')
-        avg_degree=$(echo "$metrics_output" | grep "Avg. Degree" | awk -F ': ' '{print $2}')
-        modularity=$(echo "$metrics_output" | grep -i "Modularity" | awk -F ': ' '{print $2}')
+        avg_module_size=$(echo "$metrics_output" | grep -oP 'Avg\. Module Size.*: \K[\d.]+')
+        avg_degree=$(echo "$metrics_output" | grep -oP 'Avg\. Degree: \K[\d.]+')
+        modularity=$(echo "$metrics_output" | grep -oP 'Modularity: \K[\d.]+')
 
         if [ -n "$avg_module_size" ]; then
             echo "   📊 Avg. Genes per Module: $avg_module_size"
@@ -79,5 +100,14 @@ for sim_dir in "$folder"/*; do
         echo "   ⚠️ components.tsv not found"
     fi
 
+    # ✍️ Write to CSV if selected
+    if [ "$write_csv" = "y" ]; then
+        echo "$prefix,$total_pangenome_genes,$total_genes,$possible_pairs,$sig_assoc,$assoc_rate,$module_count,$avg_module_size,$avg_degree,$modularity" >> coinfinder_summary.csv
+    fi
+
     echo ""
 done
+
+if [ "$write_csv" = "y" ]; then
+    echo "📁 Summary saved to coinfinder_summary.csv"
+fi
