@@ -13,8 +13,8 @@ for DIR in ./goldfinder/goldfinder/*; do
   if [ -d "$DIR" ]; then
     NAME=$(basename "$DIR")
 
-    # Skip directories that start with an underscore (e.g., _pycache)
-    [[ "$NAME" =~ ^_ ]] && continue
+    # Skip directories that start with an underscore (e.g., __pycache__)
+    [[ "$NAME" =~ ^_+ ]] && continue
 
     # Initialize metric variables
     ASSOCIATIONS="NA"
