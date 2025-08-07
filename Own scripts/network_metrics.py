@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-import sys
 import os
-import networkx as nx
+import sys
 import csv
+import networkx as nx
+
+# Resolve where this script lives (and the project root)
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 
 def load_goldfinder_network(file_path):
     G = nx.Graph()
     with open(file_path, newline='') as csvfile:
         reader = csv.reader(csvfile)
-        next(reader, None)  # Skip header if present
+        next(reader, None)  # skip header
         for row in reader:
             if len(row) >= 2:
                 G.add_edge(row[0], row[1])
@@ -21,7 +25,7 @@ def load_coinfinder_network(dir_path):
             G = nx.Graph()
             with open(file_path, newline='') as tsvfile:
                 reader = csv.reader(tsvfile, delimiter='\t')
-                next(reader, None)  # Skip header if present
+                next(reader, None)  # skip header
                 for row in reader:
                     if len(row) >= 2:
                         G.add_edge(row[0], row[1])
@@ -36,8 +40,7 @@ def calculate_modularity(G):
     try:
         import community  # python-louvain
         partition = community.best_partition(G)
-        modularity = community.modularity(partition, G)
-        return round(modularity, 2)
+        return round(community.modularity(partition, G), 2)
     except ImportError:
         return "NA"
 
@@ -69,7 +72,6 @@ def compute_coinfinder_module_size(file_path):
     try:
         with open(file_path, newline='') as tsvfile:
             reader = csv.reader(tsvfile, delimiter='\t')
-            # removed unconditional next(reader): now we parse every line
             for row in reader:
                 if len(row) >= 2:
                     genes = [g.strip() for g in row[1].split(',') if g.strip()]
@@ -82,7 +84,7 @@ def compute_coinfinder_module_size(file_path):
 
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python3 network_metrics.py <directory>", file=sys.stderr)
+        print(f"Usage: {os.path.basename(__file__)} <results_directory>", file=sys.stderr)
         sys.exit(1)
 
     input_dir = sys.argv[1]
@@ -90,15 +92,15 @@ def main():
     gold_clust = os.path.join(input_dir, "association_clusters.txt")
 
     try:
-        if os.path.isfile(gold_net):
+        if os.path.isfile(gold_net) and os.path.isfile(gold_clust):
             G = load_goldfinder_network(gold_net)
             avg_module_size = compute_goldfinder_module_size(gold_clust)
         else:
             G = load_coinfinder_network(input_dir)
-            # locate the components.tsv
-            comp_file = next((os.path.join(input_dir, f)
-                              for f in os.listdir(input_dir)
-                              if f.endswith("_components.tsv")), None)
+            comp_file = next(
+                (os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith("_components.tsv")),
+                None
+            )
             avg_module_size = compute_coinfinder_module_size(comp_file) if comp_file else "NA"
 
         avg_degree = calculate_avg_degree(G)
@@ -107,6 +109,7 @@ def main():
         print(f"Avg. Degree: {avg_degree}")
         print(f"Modularity: {modularity}")
         print(f"Avg. Module Size: {avg_module_size}")
+
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         print("Avg. Degree: NA")
