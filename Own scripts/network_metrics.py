@@ -1,107 +1,117 @@
+#!/usr/bin/env python3
+import sys
 import os
-import glob
-import argparse
 import networkx as nx
-from networkx.algorithms.community.quality import modularity
+import csv
 
-def load_graph_from_pairs(pairs_file, pval_threshold=0.05):
+def load_goldfinder_network(file_path):
     G = nx.Graph()
-    try:
-        with open(pairs_file, 'r') as f:
-            next(f)  # Skip header
-            print(f"✅ Reading edges from {pairs_file}")
-            for line in f:
-                parts = line.strip().split('\t')
-                if len(parts) < 3:
-                    print(f"⚠️ Skipping malformed line: {line.strip()}")
-                    continue
-                gene_a, gene_b = parts[0], parts[1]
-                try:
-                    pval = float(parts[2])
-                except ValueError:
-                    print(f"⚠️ Invalid p-value on line: {line.strip()}")
-                    continue
-                if pval < pval_threshold:
-                    G.add_edge(gene_a, gene_b)
-        print(f"🧬 Graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
-    except Exception as e:
-        print(f"⚠️ Error reading {pairs_file}: {e}")
+    with open(file_path, newline='') as csvfile:
+        reader = csv.reader(csvfile)
+        next(reader, None)  # Skip header if present
+        for row in reader:
+            if len(row) >= 2:
+                G.add_edge(row[0], row[1])
     return G
 
-def get_communities(components_file):
-    communities = []
-    try:
-        with open(components_file, 'r') as f:
-            print(f"✅ Reading communities from {components_file}")
-            for line in f:
-                parts = line.strip().split('\t')
-                if len(parts) >= 2:
-                    genes = parts[1].split(',')
-                    communities.append(genes)
-                else:
-                    print(f"⚠️ Skipping line without genes: {line.strip()}")
-        print(f"📦 Found {len(communities)} communities")
-    except Exception as e:
-        print(f"⚠️ Error reading {components_file}: {e}")
-    return communities
+def load_coinfinder_network(dir_path):
+    for fname in os.listdir(dir_path):
+        if fname.endswith("_pairs.tsv"):
+            file_path = os.path.join(dir_path, fname)
+            G = nx.Graph()
+            with open(file_path, newline='') as tsvfile:
+                reader = csv.reader(tsvfile, delimiter='\t')
+                next(reader, None)  # Skip header if present
+                for row in reader:
+                    if len(row) >= 2:
+                        G.add_edge(row[0], row[1])
+            return G
+    raise FileNotFoundError("No *_pairs.tsv file found in Coinfinder directory.")
 
-def calculate_avg_module_size(components_file):
-    sizes = []
+def calculate_avg_degree(G):
+    degrees = [deg for _, deg in G.degree()]
+    return round(sum(degrees) / len(degrees), 2) if degrees else 0.0
+
+def calculate_modularity(G):
     try:
-        with open(components_file, 'r') as f:
-            print(f"✅ Calculating module sizes from {components_file}")
+        import community  # python-louvain
+        partition = community.best_partition(G)
+        modularity = community.modularity(partition, G)
+        return round(modularity, 2)
+    except ImportError:
+        return "NA"
+
+def compute_goldfinder_module_size(file_path):
+    cluster_sizes = []
+    current_size = 0
+    try:
+        with open(file_path) as f:
             for line in f:
-                parts = line.strip().split('\t')
-                if len(parts) >= 2:
-                    genes = parts[1].split(',')
-                    sizes.append(len(genes))
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith(">"):
+                    if current_size > 0:
+                        cluster_sizes.append(current_size)
+                    current_size = 0
                 else:
-                    print(f"⚠️ Skipping line without gene list: {line.strip()}")
-        print(f"📊 Module sizes: {sizes}")
+                    current_size += 1
+            if current_size > 0:
+                cluster_sizes.append(current_size)
+        if cluster_sizes:
+            return round(sum(cluster_sizes) / len(cluster_sizes), 2)
     except Exception as e:
-        print(f"⚠️ Error reading {components_file}: {e}")
-    return round(sum(sizes) / len(sizes), 2) if sizes else 0
+        print(f"Error reading Goldfinder clusters: {e}", file=sys.stderr)
+    return "NA"
+
+def compute_coinfinder_module_size(file_path):
+    module_sizes = []
+    try:
+        with open(file_path, newline='') as tsvfile:
+            reader = csv.reader(tsvfile, delimiter='\t')
+            # removed unconditional next(reader): now we parse every line
+            for row in reader:
+                if len(row) >= 2:
+                    genes = [g.strip() for g in row[1].split(',') if g.strip()]
+                    module_sizes.append(len(genes))
+        if module_sizes:
+            return round(sum(module_sizes) / len(module_sizes), 2)
+    except Exception as e:
+        print(f"Error reading Coinfinder components: {e}", file=sys.stderr)
+    return "NA"
 
 def main():
-    parser = argparse.ArgumentParser(description="Compute module and network metrics from Coinfinder outputs.")
-    parser.add_argument("folder", help="Folder containing *_components.tsv and *_pairs.tsv files")
-    args = parser.parse_args()
+    if len(sys.argv) != 2:
+        print("Usage: python3 network_metrics.py <directory>", file=sys.stderr)
+        sys.exit(1)
 
-    print(f"📁 Searching in folder: {args.folder}")
-    components_files = glob.glob(os.path.join(args.folder, "*_components.tsv"))
+    input_dir = sys.argv[1]
+    gold_net = os.path.join(input_dir, "cytoscape_input.csv")
+    gold_clust = os.path.join(input_dir, "association_clusters.txt")
 
-    if not components_files:
-        print("❌ No *_components.tsv files found in specified folder.")
-        return
-
-    for comp_file in components_files:
-        prefix = os.path.basename(comp_file).replace("_components.tsv", "")
-        pairs_file = os.path.join(args.folder, f"{prefix}_pairs.tsv")
-
-        print(f"\n🔹 Processing prefix: {prefix}")
-
-        # Avg module size
-        avg_size = calculate_avg_module_size(comp_file)
-        print(f"📊 Avg. Module Size for {prefix}: {avg_size}")
-
-        # Network metrics
-        if os.path.exists(pairs_file):
-            G = load_graph_from_pairs(pairs_file)
-            if G.number_of_nodes() > 0:
-                avg_degree = round(sum(dict(G.degree()).values()) / G.number_of_nodes(), 2)
-                print(f"🧮 Avg. Degree: {avg_degree}")
-
-                communities = get_communities(comp_file)
-                try:
-                    mod_score = round(modularity(G, communities), 4)
-                    print(f"🧩 Modularity: {mod_score}")
-                except Exception as e:
-                    mod_score = f"⚠️ modularity error: {e}"
-                    print(mod_score)
-            else:
-                print("⚠️ Graph is empty. Cannot compute degree or modularity.")
+    try:
+        if os.path.isfile(gold_net):
+            G = load_goldfinder_network(gold_net)
+            avg_module_size = compute_goldfinder_module_size(gold_clust)
         else:
-            print(f"⚠️ Missing pairs.tsv file: {pairs_file}")
+            G = load_coinfinder_network(input_dir)
+            # locate the components.tsv
+            comp_file = next((os.path.join(input_dir, f)
+                              for f in os.listdir(input_dir)
+                              if f.endswith("_components.tsv")), None)
+            avg_module_size = compute_coinfinder_module_size(comp_file) if comp_file else "NA"
+
+        avg_degree = calculate_avg_degree(G)
+        modularity = calculate_modularity(G)
+
+        print(f"Avg. Degree: {avg_degree}")
+        print(f"Modularity: {modularity}")
+        print(f"Avg. Module Size: {avg_module_size}")
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        print("Avg. Degree: NA")
+        print("Modularity: NA")
+        print("Avg. Module Size: NA")
 
 if __name__ == "__main__":
     main()

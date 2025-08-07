@@ -1,35 +1,56 @@
 #!/bin/bash
-# Usage: ./parse_goldfinder.sh <goldfinder_dir> <name>
 
-DIR="$1"
-NAME="$2"
+# Inputs
+sim_dir="$1"
+prefix="$2"
 
-presence_file="simulation/${NAME}/gene_presence_absence.csv"
-GENE_COUNT="NA"
-ASSOCIATIONS="NA"
-MEAN_BEFORE="NA"
-MEAN_AFTER="NA"
-CLUSTER_COUNT="NA"
-AVG_CLUSTER_SIZE="NA"
-NODES="NA"
-EDGES="NA"
+dataset="$prefix"
 
-[ -f "$presence_file" ] && GENE_COUNT=$(tail -n +2 "$presence_file" | wc -l)
-[ -f "$DIR/simultaneous_association_significant_pairs.csv" ] && \
-  ASSOCIATIONS=$(tail -n +2 "$DIR/simultaneous_association_significant_pairs.csv" | wc -l)
+presence_file="simulation/${prefix}/gene_presence_absence.csv"
+pairs="${sim_dir}/simultaneous_association_significant_pairs.csv"
+clusters="${sim_dir}/association_clusters.txt"
+network="${sim_dir}/cytoscape_input.csv"
 
-[ -f "$DIR/score_distribution_before_additional_simulation.txt" ] && \
-  MEAN_BEFORE=$(awk '{ total += $1; count++ } END { if (count > 0) print total/count; else print "NA" }' "$DIR/score_distribution_before_additional_simulation.txt")
+# Checks
+if [ ! -f "$presence_file" ] || [ ! -f "$pairs" ] || [ ! -f "$clusters" ] || [ ! -f "$network" ]; then
+    echo "ERROR: Missing required files in $sim_dir" >&2
+    exit 1
+fi
 
-[ -f "$DIR/score_distribution_after_additional_simulation.txt" ] && \
-  MEAN_AFTER=$(awk '{ total += $1; count++ } END { if (count > 0) print total/count; else print "NA" }' "$DIR/score_distribution_after_additional_simulation.txt")
+# Total pangenome genes
+total_pangenome_genes=$(tail -n +2 "$presence_file" | wc -l)
 
-[ -f "$DIR/association_clusters.txt" ] && \
-  CLUSTER_COUNT=$(grep -c '^>' "$DIR/association_clusters.txt") && \
-  AVG_CLUSTER_SIZE=$(awk '/^>/ {if (size > 0) total += size; clusters++; size = 0} !/^>/ {size++} END { if (clusters > 0) print total/clusters; else print "NA" }' "$DIR/association_clusters.txt")
+# Network stats
+network_edges=$(grep -v '^\s*$' "$network" | tail -n +2 | wc -l)
+network_nodes=$(tail -n +2 "$network" | cut -d',' -f1,2 | tr ',' '\n' | sort | uniq | wc -l)
 
-[ -f "$DIR/cytoscape_input.csv" ] && \
-  EDGES=$(grep -v '^\s*$' "$DIR/cytoscape_input.csv" | tail -n +2 | wc -l) && \
-  NODES=$(tail -n +2 "$DIR/cytoscape_input.csv" | cut -d',' -f1,2 | tr ',' '\n' | sort | uniq | wc -l)
+# Association stats
+gene_associations=$(tail -n +2 "$pairs" | wc -l)
+possible_pairs=$(( (network_nodes * (network_nodes - 1)) / 2 ))
+association_rate=$(awk -v a="$gene_associations" -v p="$possible_pairs" 'BEGIN { if (p > 0) printf("%.2f", (a/p)*100); else print "0.00" }')
 
-echo "$GENE_COUNT,$ASSOCIATIONS,$MEAN_BEFORE,$MEAN_AFTER,$CLUSTER_COUNT,$AVG_CLUSTER_SIZE,$NODES,$EDGES"
+# Cluster stats
+module_count=$(grep -c '^>' "$clusters")
+avg_genes_per_module=$(
+  awk -F, '
+    /^>/ {
+      clusters++
+      genes += $2
+    }
+    END {
+      if (clusters > 0) {
+        printf "%.2f", genes / clusters
+      } else {
+        print "NA"
+      }
+    }
+  ' "$clusters"
+)
+
+# Network metrics via Python
+metrics_output=$(python3 network_metrics.py "$sim_dir")
+avg_degree=$(echo "$metrics_output" | grep -oP 'Avg\. Degree: \K[\d.]+')
+modularity=$(echo "$metrics_output" | grep -oP 'Modularity: \K[\d.]+')
+
+# Output line for unified CSV
+echo "$dataset,$total_pangenome_genes,$network_nodes,$possible_pairs,$gene_associations,$association_rate,$module_count,$avg_genes_per_module,$avg_degree,$modularity"
