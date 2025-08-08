@@ -59,9 +59,6 @@ awk -F'\t' 'NR>1 && $3 < 0.05 {
   print $1; print $2;
 }' "$PAIRS" | sort -u > "$COINGENES"
 
-GENE_COUNT=$(wc -l < "$COINGENES")
-echo "Extracted $GENE_COUNT Coinfinder genes to $COINGENES" >&2
-
 # -------------------------------------------------------------------
 # Cluster statistics
 # -------------------------------------------------------------------

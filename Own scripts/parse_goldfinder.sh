@@ -63,10 +63,6 @@ awk -F',' 'NR>1 && $4 < 0.05 {
   print $1; print $2;
 }' "$PAIRS" | sort -u > "$GOLDGENES"
 
-# Optional sanity check
-GENE_COUNT=$(wc -l < "$GOLDGENES")
-echo "Extracted $GENE_COUNT Goldfinder genes to $GOLDGENES" >&2
-
 # -------------------------------------------------------------------
 # Cluster statistics
 # -------------------------------------------------------------------
