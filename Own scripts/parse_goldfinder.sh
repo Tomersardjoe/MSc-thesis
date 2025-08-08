@@ -55,22 +55,22 @@ ASSOCIATION_RATE=$(awk -v a="$GENE_ASSOCIATIONS" -v p="$POSSIBLE_PAIRS" \
   'BEGIN { if (p > 0) printf("%.2f", (a/p)*100); else print "0.00" }')
 
 # -------------------------------------------------------------------
+# Extract unique associated genes with p-adj < 0.05
+# -------------------------------------------------------------------
+GOLDGENES="$SIM_DIR/goldfinder_genes.txt"
+awk -F',' 'NR>1 && $4 < 0.05 {
+  gsub(/"/, "", $1); gsub(/"/, "", $2);
+  print $1; print $2;
+}' "$PAIRS" | sort -u > "$GOLDGENES"
+
+# Optional sanity check
+GENE_COUNT=$(wc -l < "$GOLDGENES")
+echo "Extracted $GENE_COUNT Goldfinder genes to $GOLDGENES" >&2
+
+# -------------------------------------------------------------------
 # Cluster statistics
 # -------------------------------------------------------------------
 MODULE_COUNT=$(grep -c '^>' "$CLUSTERS")
-AVG_GENES_PER_MODULE=$(awk -F, '
-  /^>/ {
-    clusters++
-    genes += $2
-  }
-  END {
-    if (clusters > 0) {
-      printf "%.2f", genes / clusters
-    } else {
-      print "NA"
-    }
-  }
-' "$CLUSTERS")
 
 # -------------------------------------------------------------------
 # Network metrics via Python
@@ -80,6 +80,8 @@ AVG_DEGREE=$(echo "$METRICS_OUTPUT" \
   | grep -oP 'Avg\. Degree: \K[\d.]+')
 MODULARITY=$(echo "$METRICS_OUTPUT" \
   | grep -oP 'Modularity: \K[\d.]+')
+AVG_GENES_PER_MODULE=$(echo "$METRICS_OUTPUT" \
+  | grep -oP 'Avg\. Module Size.*: \K[\d.]+')
 
 # -------------------------------------------------------------------
 # Emit a single CSV line (no header)

@@ -28,25 +28,48 @@ if [[ ! -f "$NODES" ]] || [[ ! -f "$PAIRS" ]] || [[ ! -f "$COMPONENTS" ]] || [[ 
   exit 1
 fi
 
+# -------------------------------------------------------------------
 # Total pangenome genes
+# -------------------------------------------------------------------
 TOTAL_PANGENOME_GENES=$(tail -n +2 "$PRESENCE_FILE" | wc -l)
 
-# Networked genes
+# -------------------------------------------------------------------
+# Network statistics
+# -------------------------------------------------------------------
 NETWORK_NODES=$(tail -n +2 "$NODES" \
   | cut -f1 \
   | sort -u \
   | wc -l)
 
+# -------------------------------------------------------------------
 # Association statistics
+# -------------------------------------------------------------------
 GENE_ASSOCIATIONS=$(awk '$3 < 0.05' "$PAIRS" | wc -l)
 POSSIBLE_PAIRS=$(( NETWORK_NODES * (NETWORK_NODES - 1) / 2 ))
 ASSOCIATION_RATE=$(awk -v a="$GENE_ASSOCIATIONS" -v p="$POSSIBLE_PAIRS" \
   'BEGIN { if (p > 0) printf("%.2f", (a/p)*100); else print "0.00" }')
 
-# Module statistics
+# -------------------------------------------------------------------
+# Extract Coinfinder genes from Source and Target (p < 0.05)
+# -------------------------------------------------------------------
+COINGENES="${SIM_DIR}/coinfinder_genes.txt"
+
+awk -F'\t' 'NR>1 && $3 < 0.05 {
+  gsub(/"/, "", $1); gsub(/"/, "", $2);
+  print $1; print $2;
+}' "$PAIRS" | sort -u > "$COINGENES"
+
+GENE_COUNT=$(wc -l < "$COINGENES")
+echo "Extracted $GENE_COUNT Coinfinder genes to $COINGENES" >&2
+
+# -------------------------------------------------------------------
+# Cluster statistics
+# -------------------------------------------------------------------
 MODULE_COUNT=$(cut -f2 "$COMPONENTS" | sort -u | wc -l)
 
-# Gather additional metrics via Python
+# -------------------------------------------------------------------
+# Network metrics via Python
+# -------------------------------------------------------------------
 METRICS_OUTPUT=$(python3 "$SCRIPT_DIR"/network_metrics.py "$SIM_DIR")
 AVG_GENES_PER_MODULE=$(echo "$METRICS_OUTPUT" \
   | grep -oP 'Avg\. Module Size.*: \K[\d.]+')
@@ -55,5 +78,7 @@ AVG_DEGREE=$(echo "$METRICS_OUTPUT" \
 MODULARITY=$(echo "$METRICS_OUTPUT" \
   | grep -oP 'Modularity: \K[\d.]+')
 
+# -------------------------------------------------------------------
 # Emit a single CSV line (no header)
+# -------------------------------------------------------------------
 echo "${DATASET},${TOTAL_PANGENOME_GENES},${NETWORK_NODES},${POSSIBLE_PAIRS},${GENE_ASSOCIATIONS},${ASSOCIATION_RATE},${MODULE_COUNT},${AVG_GENES_PER_MODULE},${AVG_DEGREE},${MODULARITY}"
