@@ -333,12 +333,24 @@ run_d_pipeline <- function(tree_path,
                            gold_path,
                            coin_path,
                            out_prefix = "d_values",
+                           out_dir = ".",
                            n_sim = 2000,
                            base_seed = 1,
                            taxa_mode = "auto",
                            gene_col = NA,
                            sample_cols = NULL,
                            na_drop = TRUE) {
+  # Create output directory if it does not exist
+  if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
+
+  # Validate output directory and prefix
+  if (is.null(out_dir) || is.na(out_dir) || !nzchar(out_dir)) {
+  fail("Invalid output directory: out_dir is missing or empty.")
+  }
+  if (is.null(out_prefix) || is.na(out_prefix) || !nzchar(out_prefix)) {
+  fail("Invalid output prefix: out_prefix is missing or empty.")
+  }
+
   # Load inputs
   if (!file.exists(tree_path)) fail(sprintf("Tree file not found: %s", tree_path))
   if (!file.exists(pa_path)) fail(sprintf("Presence/absence file not found: %s", pa_path))
@@ -395,11 +407,11 @@ run_d_pipeline <- function(tree_path,
   if (nrow(res_gf)) res_gf$source <- "goldfinder"
   if (nrow(res_cf)) res_cf$source <- "coinfinder"
   res_all <- rbind(res_gf, res_cf)
-  
-  utils::write.csv(res_gf, sprintf("%s_goldfinder.csv", out_prefix), row.names = FALSE)
-  utils::write.csv(res_cf, sprintf("%s_coinfinder.csv", out_prefix), row.names = FALSE)
-  utils::write.csv(res_all, sprintf("%s_combined.csv", out_prefix), row.names = FALSE)
-  
+
+  utils::write.csv(res_gf, file.path(out_dir, sprintf("%s_goldfinder.csv", out_prefix)), row.names = FALSE)
+  utils::write.csv(res_cf, file.path(out_dir, sprintf("%s_coinfinder.csv", out_prefix)), row.names = FALSE)
+  utils::write.csv(res_all, file.path(out_dir, sprintf("%s_combined.csv", out_prefix)), row.names = FALSE)
+
   invisible(list(goldfinder = res_gf, coinfinder = res_cf, combined = res_all,
                  missing = list(goldfinder = gf_missing, coinfinder = cf_missing)))
 }
@@ -414,6 +426,7 @@ option_list <- list(
   make_option(c("--goldfinder", "-g"), type = "character", help = "Path to Goldfinder gene list (.txt)", metavar = "FILE"),
   make_option(c("--coinfinder", "-c"), type = "character", help = "Path to Coinfinder gene list (.txt)", metavar = "FILE"),
   make_option(c("--out_prefix", "-o"), type = "character", default = "d_values", help = "Prefix for output CSVs [default %default]", metavar = "STR"),
+  make_option(c("--out_dir", "-d"), type = "character", default = ".", help = "Directory to write output CSVs [default %default]", metavar = "DIR"),
   make_option(c("--n_sim", "-n"), type = "integer", default = 4000, help = "Number of simulations per gene [default %default]", metavar = "INT"),
   make_option(c("--seed", "-s"), type = "integer", default = 1, help = "Base random seed [default %default]", metavar = "INT"),
   make_option(c("--taxa_mode"), type = "character", default = "auto", help = "Taxa orientation in PA file: auto|rows|cols [default %default]", metavar = "STR"),
@@ -454,6 +467,7 @@ res <- tryCatch({
     gold_path     = opt$goldfinder,
     coin_path     = opt$coinfinder,
     out_prefix    = opt$out_prefix,
+    out_dir       = opt$out_dir,
     n_sim         = as.integer(opt$n_sim),
     base_seed     = as.integer(opt$seed),
     taxa_mode     = tolower(opt$taxa_mode),
@@ -466,7 +480,7 @@ res <- tryCatch({
 })
 
 # Console summary
-cat(sprintf("\n✅ D-values written to:\n - %s_goldfinder.csv\n - %s_coinfinder.csv\n - %s_combined.csv\n",
-            opt$out_prefix, opt$out_prefix, opt$out_prefix))
+cat(sprintf("\n✅ D-values written to:\n - %s/%s_goldfinder.csv\n - %s/%s_coinfinder.csv\n - %s/%s_combined.csv\n",
+            opt$out_dir, opt$out_prefix, opt$out_dir, opt$out_prefix, opt$out_dir, opt$out_prefix))
 
 invisible(res)
