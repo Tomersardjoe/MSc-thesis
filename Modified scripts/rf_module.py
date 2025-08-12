@@ -3,6 +3,9 @@ rf_module.py
 
 Module used for the analysis of pangenomes using random forests.
 """
+import sys
+import re
+import ast
 import random
 import numpy as np
 import pandas as pd
@@ -134,7 +137,19 @@ def update_performance(table, i, y_sets):
     table.loc[i, 'F0te'] = test_report['0']['f1-score']
     table.loc[i, 'Fte'] = test_report['macro avg']['f1-score']
 
+def flatten_index_like(obj):
+    def clean_entry(entry):
+        # If it's a string, extract just the first item
+        if isinstance(entry, str):
+            match = re.match(r"\(?[\"']?(\w+)[\"']?,?", entry)
+            if match:
+                return match.group(1)
+        # If it's a tuple, drop NaNs and join
+        if isinstance(entry, tuple):
+            return "_".join(str(i) for i in entry if pd.notna(i))
+        return str(entry)
 
+    return [clean_entry(e) for e in obj]
 
 def fit_classifiers(table, results, params, output, checkpoint):
     """
@@ -146,8 +161,12 @@ def fit_classifiers(table, results, params, output, checkpoint):
     table = table.transpose() #I think this is easier transposed
     start = 0
     if checkpoint != 0:
-        results[0] = pd.read_csv(output +"/imp.csv", header = 0, index_col = 0)
-        results[1] = pd.read_csv(output + "/performance.csv", header = 0, index_col = 0)
+        results[0] = pd.read_csv(output + "/imp.csv", header=0, index_col=0)
+        results[1] = pd.read_csv(output + "/performance.csv", header=0, index_col=0)
+        # Normalize immediately after loading
+        results[0].index = flatten_index_like(results[0].index)
+        results[0].columns = flatten_index_like(results[0].columns)
+
         start = checkpoint
 
     for i in range(start, n_g):
@@ -199,8 +218,18 @@ def fit_classifiers(table, results, params, output, checkpoint):
         results[0][results[0].columns[i]] = \
                 np.insert(model.feature_importances_, i, [0])
 
+        # At checkpoints
         if i % 1000 == 0 and i != 0:
-            print("\nWriting importance and performance martices...\n")
+            print("\nWriting importance and performance matrices...\n")
+            results[0].index = flatten_index_like(results[0].index)
+            results[0].columns = flatten_index_like(results[0].columns)
             results[0].round(5).to_csv(output + "/imp.csv")
             results[1].round(5).to_csv(output + "/performance.csv")
+
+    # Ensure final state is clean even if no checkpoint triggered
+    results[0].index = flatten_index_like(results[0].index)
+    results[0].columns = flatten_index_like(results[0].columns)
+    results[0].round(5).to_csv(output + "/imp.csv")
+    results[1].round(5).to_csv(output + "/performance.csv")
+
     return results
