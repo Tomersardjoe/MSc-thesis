@@ -75,8 +75,9 @@ combine_by_header() {
   done
 }
 
-# Merge both tool summaries
+# Merge all tool summaries
 combine_by_header "Coinfinder" "coinfinder_summary.csv"
 combine_by_header "Goldfinder"  "goldfinder_summary.csv"
+combine_by_header "Panforest"  "panforest_summary.csv"
 
 echo "[✅] Created combined_summary.csv at $SUMMARIES_DIR/combined_summary.csv"

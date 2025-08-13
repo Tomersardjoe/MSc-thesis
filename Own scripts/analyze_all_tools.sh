@@ -33,8 +33,6 @@ for DIR in "$PROJECT_ROOT"/coinfinder/*/; do
   echo "[✔] Finished parsing Coinfinder: $NAME"
 done
 
-
-
 # -----------------------------------------------------------------------------
 # Goldfinder
 # -----------------------------------------------------------------------------
@@ -57,7 +55,37 @@ for DIR in "$PROJECT_ROOT"/goldfinder/goldfinder/*/; do
   echo "[✔] Finished parsing Goldfinder: $NAME"
 done
 
+# -----------------------------------------------------------------------------
+# Panforest
+# -----------------------------------------------------------------------------
+echo "[📦] Parsing Panforest results..."
+echo "Dataset,Total_Pangenome_Genes,Total_Networked_Genes,Possible_Gene_Pairs,Significant_Associations,Association_Rate,Module_Count,Avg_Genes_per_Module,Avg_Degree,Modularity" \
+  > "$SUMMARIES_DIR"/panforest_summary.csv
 
+for DIR in "$PROJECT_ROOT"/panforest/*/; do
+  NAME=$(basename "$DIR")
+  [[ "$NAME" =~ ^_+ ]] && echo "[⏭] Skipping $NAME" && continue
+  NAME=$(basename "$DIR")
+  PRES_FILE="$PROJECT_ROOT/simulation/$NAME/gene_presence_absence.csv"
+  IMP_FILE="$DIR/imp.csv"
+  GRAPHML_OUT="$DIR/filtered_network.graphml"
+
+  if [[ ! -f "$PRES_FILE" ]] || [[ ! -f "$IMP_FILE" ]]; then
+    echo "$NAME,NA,NA,NA,NA,NA,NA,NA,NA,NA" >> "$SUMMARIES_DIR"/panforest_summary.csv
+    echo "[⚠] Missing required files for Panforest: $NAME"
+    continue
+  fi
+
+  # Capture metrics line printed by R script and append to summary
+  if METRICS=$(Rscript "$SCRIPT_DIR"/panforest_top_features.R "$PRES_FILE" "$IMP_FILE" "$GRAPHML_OUT"); then
+    echo "$METRICS" >> "$SUMMARIES_DIR"/panforest_summary.csv
+  else
+    echo "$NAME,NA,NA,NA,NA,NA,NA,NA,NA,NA" >> "$SUMMARIES_DIR"/panforest_summary.csv
+    echo "[⚠] Failed Panforest analysis: $NAME"
+  fi
+
+  echo "[✔] Finished parsing Panforest: $NAME"
+done
 
 # -----------------------------------------------------------------------------
 # Combine Summaries
@@ -66,6 +94,7 @@ echo "[🔁] Invoking combiner to generate combined summary..."
 bash "$SCRIPT_DIR"/combine_summaries.sh \
   "$SUMMARIES_DIR"/coinfinder_summary.csv \
   "$SUMMARIES_DIR"/goldfinder_summary.csv \
+  "$SUMMARIES_DIR"/panforest_summary.csv \
   "$SUMMARIES_DIR"/combined_summary.csv
 
 echo "[🎉] All analyses complete!"
