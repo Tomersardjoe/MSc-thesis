@@ -77,7 +77,7 @@ for DIR in "$PROJECT_ROOT"/panforest/*/; do
   fi
 
   # Capture metrics line printed by R script and append to summary
-  if METRICS=$(Rscript "$SCRIPT_DIR"/panforest_top_features.R "$PRES_FILE" "$IMP_FILE" "$GRAPHML_OUT"); then
+  if METRICS=$(Rscript "$SCRIPT_DIR"/parse_panforest.R "$PRES_FILE" "$IMP_FILE" "$GRAPHML_OUT"); then
     echo "$METRICS" >> "$SUMMARIES_DIR"/panforest_summary.csv
   else
     echo "$NAME,NA,NA,NA,NA,NA,NA,NA,NA,NA" >> "$SUMMARIES_DIR"/panforest_summary.csv
