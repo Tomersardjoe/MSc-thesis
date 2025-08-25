@@ -1,15 +1,38 @@
 #!/usr/bin/env Rscript
 
 # Explicit, reproducible p-adjustment for Coinfinder <dataset>_pairs.tsv
-# Usage: Rscript p_adj_coinfinder.R path to <pairs.tsv>
+# Usage: Rscript p_adj_coinfinder.R path to <dataset> (e.g. Coinfinder/sim_small)
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) != 2) {
-  stop("Usage: p_adj_coinfinder.R path to <pairs.tsv> <fdr_bh_threshold>")
+
+if (length(args) < 1) {
+    stop("Usage: p_adj_coinfinder.R <dataset_directory> [significance_threshold, default=0.05]")
 }
 
-pairs_path <- args[1]
-fdr_threshold <- as.numeric(args[2])
+dataset_dir <- args[1]
+
+if (!dir.exists(dataset_dir)) {
+    stop(paste("Directory does not exist:", dataset_dir))
+}
+
+# Find *_pairs.tsv in that directory
+pairs_files <- list.files(dataset_dir, pattern = "_pairs\\.tsv$", full.names = TRUE)
+
+if (length(pairs_files) == 0) {
+    stop("No file ending in _pairs.tsv found in ", dataset_dir)
+} else if (length(pairs_files) > 1) {
+    stop("Multiple _pairs.tsv files found in ", dataset_dir, 
+         ". Please ensure only one exists or adjust pattern matching.")
+}
+
+pairs_path <- pairs_files[1]
+
+# Set default significance threshold if not provided
+if (length(args) >= 2) {
+    fdr_threshold <- as.numeric(args[2])
+} else {
+    fdr_threshold <- 0.05
+}
 
 if (!file.exists(pairs_path)) {
   stop("Input file not found: ", pairs_path)
@@ -36,8 +59,9 @@ if (!pcol %in% names(pairs)) {
 
 # Check for existing FDR_BH column
 if ("FDR_BH" %in% names(pairs)) {
-  stop("Column 'FDR_BH' already exists in: ", pairs_path,
-       " — Has multiple testing correction already been applied?")
+  message("Column 'FDR_BH' already exists in: ", pairs_path,
+       " — multiple testing correction already applied.")
+  quit(status=0)
 }
 
 # Apply BH correction

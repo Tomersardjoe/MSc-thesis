@@ -2,27 +2,23 @@
 
 suppressPackageStartupMessages({
   library(igraph)
-  library(rgexf)
 })
 
-# Read input arguments
+# --- Arguments ---
 args <- commandArgs(trailingOnly = TRUE)
-
-if (length(args) < 5) {
-  stop("Usage: script.R <gene_presence_absence.csv - root directory> <output directory> <coinfinder root directory> <goldfinder root directory> <panforest root directory> Optional: [dataset]")
+if (length(args) < 6) {
+  stop("Usage: script.R <gene_presence_absence.csv - root directory> <output directory> <coinfinder root directory> <goldfinder root directory> <panforest root directory> <dataset>")
 }
 
-gpa_root_dir          <- args[1]
-output_dir            <- args[2]
-coinfinder_root_dir   <- args[3]
-goldfinder_root_dir   <- args[4]
-panforest_root_dir    <- args[5]
-dataset_opt           <- if (length(args) >= 6) args[6] else NA_character_
+gpa_root_dir        <- args[1]
+output_dir          <- args[2]
+coinfinder_root_dir <- args[3]
+goldfinder_root_dir <- args[4]
+panforest_root_dir  <- args[5]
+dataset             <- args[6]
 
-# Hard blocklist for hidden/noise directories
 deny_dirs <- c("__pycache__")
 
-# List immediate, non-hidden subdirectories of a root (not recursive)
 list_nonhidden_dirs <- function(root) {
   entries <- list.files(root, full.names = TRUE, recursive = FALSE, include.dirs = TRUE, no.. = TRUE)
   if (length(entries) == 0) return(character(0))
@@ -31,77 +27,72 @@ list_nonhidden_dirs <- function(root) {
   dirs[keep]
 }
 
-# Resolve the search roots given an optional dataset
-search_dirs <- function(root, dataset = NA_character_) {
+search_dirs <- function(root, dataset) {
   root <- normalizePath(root, mustWork = TRUE)
-  if (!is.na(dataset)) {
-    ds_dir <- file.path(root, dataset)
-    if (!dir.exists(ds_dir)) {
-      stop("Dataset '", dataset, "' not found in root: ", root)
-    }
-    return(normalizePath(ds_dir, mustWork = TRUE))
-  } else {
-    dirs <- list_nonhidden_dirs(root)
-    if (length(dirs) == 0) {
-      stop("No non-hidden subdirectories found under root: ", root)
-    }
-    return(normalizePath(dirs, mustWork = TRUE))
+  ds_dir <- file.path(root, dataset)
+  if (!dir.exists(ds_dir)) {
+    stop("Dataset '", dataset, "' not found in root: ", root)
   }
+  normalizePath(ds_dir, mustWork = TRUE)
 }
 
-# Find exactly one file by pattern within the allowed search dirs
-find_exactly_one_file <- function(root, pattern, dataset = NA_character_) {
+find_exactly_one_file <- function(root, pattern, dataset) {
   dirs <- search_dirs(root, dataset)
   files <- unlist(lapply(dirs, function(d) {
     list.files(d, pattern = pattern, full.names = TRUE, recursive = TRUE)
   }), use.names = FALSE)
   files <- unique(files)
-  
   if (length(files) != 1) {
-    stop("Expected exactly one match for pattern '", pattern, "' under ",
-         ifelse(is.na(dataset), paste0("root: ", root), paste0("root/dataset: ", root, " / ", dataset)),
+    stop("Expected exactly one match for pattern '", pattern, "' under root/dataset: ",
+         root, " / ", dataset,
          ". Found (", length(files), "): ", paste(files, collapse = " | "))
   }
   normalizePath(files, mustWork = TRUE)
 }
 
-# Hard-coded, explicit weight attribute mapping by tool.
+# --- Weight mapping ---
 WEIGHT_ATTR_BY_TOOL <- c(
-  coinfinder = "weight",
+  coinfinder = "FDR_BH",
   goldfinder = "Force",
   panforest = "Importance"
 )
 
-# Detect tool from file path and header/extension
 detect_tool <- function(file_path) {
   ext <- tolower(tools::file_ext(file_path))
-  if (ext == "gexf") return(list(tool = "coinfinder", format = "gexf"))
-  if (ext == "graphml" || ext == "xml") return(list(tool = "panforest", format = "graphml"))
+  
+  # Panforest
+  if (ext %in% c("graphml", "xml"))
+    return(list(tool = "panforest", format = "graphml"))
+  
+  # Goldfinder CSV (header-based)
   if (ext == "csv") {
     hdr <- names(read.csv(file_path, nrows = 1, check.names = FALSE))
     if (all(c("Node1","Node2","Force","pair_type") %in% hdr))
       return(list(tool = "goldfinder", format = "csv_goldfinder"))
     return(list(tool = "csv_unknown", format = "csv"))
   }
+  
+  # Coinfinder TSV (header-based)
+  if (ext == "tsv") {
+    hdr <- names(read.delim(file_path, nrows = 1, check.names = FALSE))
+    if (all(c("Source","Target","weight","FDR_BH") %in% hdr))
+      return(list(tool = "coinfinder", format = "tsv_coinfinder"))
+    return(list(tool = "tsv_unknown", format = "tsv"))
+  }
+  
   return(list(tool = "unknown", format = ext))
 }
 
-# Read gexf graph helper function
-read_gexf_graph <- function(path) {
-  gexf_obj <- read.gexf(path)
-  g <- gexf.to.igraph(gexf_obj)
-  return(g)
-}
-
-# Read graph with edge/vertex attributes preserved
 read_native_graph <- function(file_path, info) {
-  if (info$format == "gexf") {
-    g <- read_gexf_graph(file_path)
-  } else if (info$format == "graphml") {
+  if (info$format == "graphml") {
     g <- read_graph(file_path, format = "graphml")
   } else if (info$format == "csv_goldfinder") {
     df <- read.csv(file_path, check.names = FALSE, stringsAsFactors = FALSE)
-    edges <- df[, c("Node1","Node2", setdiff(c("Force","pair_type"), character(0))), drop = FALSE]
+    edges <- df[, c("Node1","Node2","Force","pair_type"), drop = FALSE]
+    g <- graph_from_data_frame(edges, directed = FALSE)
+  } else if (info$format == "tsv_coinfinder") {
+    df <- read.delim(file_path, check.names = FALSE, stringsAsFactors = FALSE)
+    edges <- df[, c("Source","Target","weight",WEIGHT_ATTR_BY_TOOL["coinfinder"]), drop = FALSE]
     g <- graph_from_data_frame(edges, directed = FALSE)
   } else {
     stop("Unsupported or unknown input format for: ", file_path)
@@ -109,29 +100,83 @@ read_native_graph <- function(file_path, info) {
   g
 }
 
-# Normalize graph: undirected, simplified; do not read edge attributes here
 normalize_graph <- function(g, tool = NULL) {
-  # Decide weight attribute deterministically, no guessing
   weight_attr <- unname(WEIGHT_ATTR_BY_TOOL[[tool]])
   if (is.null(weight_attr) || !(weight_attr %in% edge_attr_names(g))) {
     weight_attr <- NULL
   }
-  
-  # Attribute combiner: average the known weight attr (if present), keep first for others
   attr_names <- edge_attr_names(g)
   attr_comb <- if (length(attr_names)) setNames(rep("first", length(attr_names)), attr_names) else list()
   if (!is.null(weight_attr)) attr_comb[[weight_attr]] <- "mean"
-  
-  # Undirected and simplified with deterministic attribute combination
   g <- as_undirected(g, mode = "collapse", edge.attr.comb = attr_comb)
   g <- simplify(g, remove.multiple = TRUE, remove.loops = TRUE, edge.attr.comb = attr_comb)
-  
-  # Record intended weight attribute name only; actual numeric extraction happens later
   attr(g, "weight_attr") <- weight_attr
   g
 }
 
-# Restrict to canonical genes, report dropped non-canonical nodes
+harmonize_edge_weights <- function(
+    g, tool, alpha = 1, concave_exp = 0.7,
+    eps_p = 1e-300, winsor = c(0, 0.99),
+    min_cost = 1e-9
+) {
+  # 1) Tool-specific strength
+  s <- switch(tool,
+              coinfinder = {
+                p <- as.numeric(igraph::edge_attr(g, "FDR_BH"))
+                -log10(pmax(p, eps_p))
+              },
+              goldfinder = {
+                f <- as.numeric(igraph::edge_attr(g, "Force"))
+                if (is.null(igraph::edge_attr(g, "pair_type"))) {
+                  E(g)$association <- ifelse(is.na(f), NA_character_,
+                                             ifelse(f >= 0, "co", "anti"))
+                } else {
+                  E(g)$association <- as.character(igraph::edge_attr(g, "pair_type"))
+                }
+                abs(f)
+              },
+              panforest = {
+                imp <- as.numeric(igraph::edge_attr(g, "Importance"))
+                pmax(imp, 0)
+              },
+              stop("Unknown tool: ", tool)
+  )
+  
+  # 2) Handle NAs/Infs
+  s[!is.finite(s)] <- NA_real_
+  
+  # 3) Winsorization (stabilize extremes)
+  if (!is.null(winsor) && length(winsor) == 2) {
+    qs <- stats::quantile(s, probs = winsor, na.rm = TRUE, names = FALSE)
+    s <- pmin(pmax(s, qs[1]), qs[2])
+  }
+  
+  # 4) ECDF percentile scaling to [0,1]
+  valid <- which(!is.na(s))
+  w <- rep(NA_real_, length(s))
+  if (length(valid) > 1) {
+    ec <- stats::ecdf(s[valid])
+    w[valid] <- ec(s[valid])
+  } else if (length(valid) == 1) {
+    w[valid] <- 1.0
+  }
+  
+  # 5) Tail emphasis
+  if (!is.null(alpha) && alpha > 0 && alpha != 1) {
+    w <- w ^ alpha
+  }
+  
+  # 6) Attach harmonized weights and concave distance transform
+  E(g)$w_harmonized <- as.numeric(w)
+  E(g)$distance <- 1 - (pmin(pmax(E(g)$w_harmonized, 0), 1))^concave_exp
+  
+  # 7) Ensure strictly positive distances for igraph algorithms
+  E(g)$distance <- pmax(E(g)$distance, min_cost)
+  E(g)$weight   <- E(g)$distance
+  
+  g
+}
+
 restrict_to_canonical <- function(g, canonical_genes, drop_noncanonical = TRUE) {
   current <- V(g)$name
   if (is.null(current)) stop("Vertex names are missing; graphs must have gene IDs as vertex names.")
@@ -145,7 +190,6 @@ restrict_to_canonical <- function(g, canonical_genes, drop_noncanonical = TRUE) 
   )
 }
 
-# Pad missing canonical genes as isolates
 pad_to_canonical <- function(g, canonical_genes) {
   missing <- setdiff(canonical_genes, V(g)$name)
   if (length(missing) > 0) {
@@ -154,49 +198,49 @@ pad_to_canonical <- function(g, canonical_genes) {
   g
 }
 
-# Full load + harmonize pipeline for one file
-load_harmonize_graph <- function(file_path, canonical_genes, drop_noncanonical = TRUE) {
+load_harmonize_graph <- function(file_path, canonical_genes, drop_noncanonical = TRUE,
+                                 alpha = 1) {
   info <- detect_tool(file_path)
   g_raw <- read_native_graph(file_path, info)
   g_norm <- normalize_graph(g_raw, tool = info$tool)
-  
-  # Coverage before padding (within canonical universe)
   present_in_canonical <- sum(V(g_norm)$name %in% canonical_genes)
   coverage_ratio <- present_in_canonical / length(canonical_genes)
-  
   r <- restrict_to_canonical(g_norm, canonical_genes, drop_noncanonical = drop_noncanonical)
   g_restricted <- r$g
-  nodes_pre_padding <- vcount(g_restricted)  # capture here
+  nodes_pre_padding <- vcount(g_restricted)
   g_padded <- pad_to_canonical(g_restricted, canonical_genes)
-  
+  g_h <- harmonize_edge_weights(g_padded, tool = info$tool, alpha = alpha)
   list(
     tool = info$tool,
     format = info$format,
-    graph = g_padded,
+    graph = g_h,
     coverage_ratio = coverage_ratio,
     noncanonical_removed = r$noncanonical_removed,
     nodes_pre_padding = nodes_pre_padding
   )
 }
 
-##### Metrics calculations #####
 compute_metrics <- function(g, use_weights = TRUE) {
   w <- NULL
   if (use_weights) {
-    weight_attr <- attr(g, "weight_attr")
-    if (!is.null(weight_attr) &&
-        ecount(g) > 0 &&
-        weight_attr %in% edge_attr_names(g)) {
-      vals <- tryCatch(E(g)[[weight_attr]], error = function(e) NULL)
-      if (!is.null(vals)) {
-        if (!is.numeric(vals)) vals <- suppressWarnings(as.numeric(vals))
-        if (length(vals) == ecount(g) && any(is.finite(vals))) {
-          w <- vals
+    # Prefer harmonized weights if available
+    if ("w_harmonized" %in% edge_attr_names(g)) {
+      w <- E(g)$w_harmonized
+    } else {
+      weight_attr <- attr(g, "weight_attr")
+      if (!is.null(weight_attr) &&
+          ecount(g) > 0 &&
+          weight_attr %in% edge_attr_names(g)) {
+        vals <- tryCatch(E(g)[[weight_attr]], error = function(e) NULL)
+        if (!is.null(vals)) {
+          if (!is.numeric(vals)) vals <- suppressWarnings(as.numeric(vals))
+          if (length(vals) == ecount(g) && any(is.finite(vals))) {
+            w <- vals
+          }
         }
       }
     }
   }
-  
   n <- vcount(g); m <- ecount(g)
   deg <- if (n > 0) degree(g, mode = "all") else numeric(0)
   
@@ -231,6 +275,7 @@ compute_metrics <- function(g, use_weights = TRUE) {
   kcore_max <- if (n > 0) max(coreness(g)) else NA_real_
   
   degree_gini <- if (n > 0) ineq::Gini(deg) else NA_real_
+  
   btw <- if (n > 0) betweenness(g) else numeric(0)
   btw_mean <- if (length(btw)) mean(btw) else NA_real_
   btw_max <- if (length(btw)) max(btw) else NA_real_
@@ -262,12 +307,10 @@ compute_metrics <- function(g, use_weights = TRUE) {
     total_triples <- choose(vcount(g), 3)
     disconnected <- total_triples - open - tri
     
-    # Fill all 16 slots with NA
     triad_census_vals <- rep(NA_real_, 16)
-    # Slot positions for undirected: 1=003, 2=102, 16=300
-    triad_census_vals[1]  <- disconnected
-    triad_census_vals[2]  <- open
-    triad_census_vals[16] <- tri
+    triad_census_vals[1]  <- disconnected # 003
+    triad_census_vals[2]  <- open         # 102
+    triad_census_vals[16] <- tri          # 300
   } else {
     triad_census_vals <- if (m > 0) triad_census(g) else rep(NA_real_, 16)
   }
@@ -310,57 +353,51 @@ compute_metrics <- function(g, use_weights = TRUE) {
   )
 }
 
-##### Batch loading #####
-# 1) Canonical gene universe from gene_presence_absence.csv
+# ==== Main execution ====
 gpa_path <- find_exactly_one_file(
   root    = gpa_root_dir,
   pattern = "^gene_presence_absence\\.csv$",
-  dataset = dataset_opt
+  dataset = dataset
 )
 
 canonical <- read.csv(gpa_path, stringsAsFactors = FALSE)
+if (!("Gene" %in% names(canonical))) {
+  stop("The gene_presence_absence.csv must contain a 'Gene' column.")
+}
 canonical_genes <- unique(canonical$Gene)
 
-# Derive dataset name
-dataset_name <- if (!is.na(dataset_opt)) {
-  dataset_opt
-} else {
-  basename(normalizePath(dirname(gpa_path)))
-}
-
-# 2) Paths to native tool outputs
 coinfinder_path <- find_exactly_one_file(
   root    = coinfinder_root_dir,
-  pattern = "\\.gexf$",
-  dataset = dataset_name
+  pattern = "\\_edges.tsv$",
+  dataset = dataset
 )
 
 goldfinder_path <- find_exactly_one_file(
   root    = goldfinder_root_dir,
   pattern = "cytoscape_input\\.csv$",
-  dataset = dataset_name
+  dataset = dataset
 )
 
 panforest_path <- find_exactly_one_file(
   root    = panforest_root_dir,
   pattern = "\\.graphml$",
-  dataset = dataset_name
+  dataset = dataset
 )
 
 paths <- c(coinfinder_path, goldfinder_path, panforest_path)
 
-# 3) Load, harmonize, and compute metrics
-loaded <- lapply(paths, load_harmonize_graph, canonical_genes = canonical_genes)
+loaded <- lapply(paths, load_harmonize_graph, canonical_genes = canonical_genes, alpha = 1)
 names(loaded) <- vapply(loaded, function(x) x$tool, character(1))
 graphs <- lapply(loaded, function(x) x$graph)
 
 metrics <- do.call(rbind, lapply(names(graphs), function(name) {
   m <- compute_metrics(graphs[[name]])
   m$tool <- name
-  m$dataset <- dataset_name
+  m$dataset <- dataset
   m$format <- loaded[[name]]$format
   m$nodes_pre_padding <- loaded[[name]]$nodes_pre_padding
   m$noncanonical_removed <- loaded[[name]]$noncanonical_removed
+  m$coverage_ratio <- loaded[[name]]$coverage_ratio
   m
 }))
 
@@ -380,11 +417,24 @@ metrics <- metrics[, c(
   "noncanonical_removed"
 )]
 
-if (!dir.exists(output_dir)) {
-  dir.create(output_dir, recursive = TRUE)
+# Mark metrics computed from harmonized weights
+norm_cols <- c(
+  "global_clustering_coefficient",
+  "avg_path_length",
+  "diameter",
+  "modularity_louvain",
+  "btw_mean",
+  "btw_max",
+  "eigen_var"
+)
+
+for (col in norm_cols) {
+  if (col %in% names(metrics)) {
+    names(metrics)[names(metrics) == col] <- paste0(col, "_norm")
+  }
 }
 
-metrics_output_path <- file.path(output_dir, paste0(dataset_name, "_metrics.csv"))
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+metrics_output_path <- file.path(output_dir, paste0(dataset, "_metrics.csv"))
 write.csv(metrics, metrics_output_path, row.names = FALSE)
-
 message("Metrics written to: ", metrics_output_path)
