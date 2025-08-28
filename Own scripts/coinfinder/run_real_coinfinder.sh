@@ -10,7 +10,6 @@ tree_dir="real_pangenomes/tree_matches"
 gpa_dir="real_pangenomes/gpa_matches"
 out_base="real_pangenomes/coinfinder_runs"
 
-
 # Safety: bail if directories aren’t found
 for d in "$tree_dir" "$gpa_dir"; do
     if [ ! -d "$d" ]; then
@@ -26,9 +25,9 @@ for tree_file in "$tree_dir"/*_red_tree_converted.nwk; do
     
     # Extract species_taxid from filename
     filename=$(basename "$tree_file")
-    species_taxid="${filename%%_*}"   # take everything before first "_"
+    species_taxid="${filename%%_*}"
 
-    # Build paths to corresponding GPA file
+    # Build path to corresponding GPA file
     gpa_file="${gpa_dir}/${species_taxid}_REDUCED.tab"
     [ -f "$gpa_file" ] && echo "Found!" || echo "Missing!"
     
@@ -51,14 +50,9 @@ for tree_file in "$tree_dir"/*_red_tree_converted.nwk; do
     gpa_file="$(realpath "$gpa_dir/${species_taxid}_REDUCED.tab")"
     tree_file="$(realpath "$tree_file")"
     
-    outdir="${out_base}/${species_taxid}"
-    if [ -d "$outdir" ] && [ "$(ls -A "$outdir")" ]; then
-        echo "Error: $outdir already exists and is not empty. Stopping."
-        exit 1
-    fi
-    
     mkdir -p "$outdir"
 
+    # Run Coinfinder
     (
       cd "$outdir" || exit
       coinfinder \
