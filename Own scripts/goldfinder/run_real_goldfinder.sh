@@ -8,6 +8,7 @@ fi
 
 tree_dir="real_pangenomes/tree_matches"
 gpa_dir="real_pangenomes/gpa_matches"
+gold_dir="goldfinder/goldfinder
 out_base="real_pangenomes/goldfinder_runs"
 
 # Safety: bail if directories aren’t found
@@ -54,7 +55,7 @@ for tree_file in "$tree_dir"/*_red_tree_converted.nwk; do
 
     # Run Goldfinder
     (
-      NUMBA_NUM_THREADS=24 python3 goldfinder/goldfinder/goldfinder.py \
+      NUMBA_NUM_THREADS=24 python3 $gold_dir/goldfinder.py \
         -i "$gpa_file" \
         -t "$tree_file" \
         -o "$outdir" \
