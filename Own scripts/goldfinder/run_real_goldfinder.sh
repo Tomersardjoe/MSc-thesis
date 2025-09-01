@@ -43,8 +43,8 @@ for tree_file in "$tree_dir"/*_red_tree_converted.nwk; do
     # Output directory for this species
     outdir="${out_base}/${species_taxid}"
     if [ -d "$outdir" ] && [ "$(ls -A "$outdir")" ]; then
-        echo "Error: $outdir already exists and is not empty. Stopping."
-        exit 1
+        echo "Skipping ${species_taxid}: $outdir already exists and is not empty."
+        continue
     fi
 
     # Use absolute file paths
