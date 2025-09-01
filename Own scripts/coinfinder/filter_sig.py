@@ -1,5 +1,6 @@
 import pandas as pd
 from pathlib import Path
+import shutil
 import sys
 
 def filter_edges_nodes_components(input_dir, fdr_cutoff=0.05, overwrite=False):
@@ -63,6 +64,11 @@ def filter_edges_nodes_components(input_dir, fdr_cutoff=0.05, overwrite=False):
 
         # Filter nodes
         if nodes_file.exists():
+            # Make a copy of the ALL nodes
+            copy_file = nodes_file.with_name(f"{nodes_file.stem}_all{nodes_file.suffix}")
+            shutil.copy2(nodes_file, copy_file)
+            print(f"File with all nodes saved as: {copy_file}")
+        
             filtered_nodes = nodes_df[nodes_df[nodes_df.columns[0]].isin(genes_to_keep)]
             filtered_nodes.to_csv(nodes_file, sep="\t", index=False)
             print(f"Overwritten nodes: {nodes_file}")
