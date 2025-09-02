@@ -47,13 +47,13 @@ merged_df = merged_df[merged_df['Species'].str.strip() != '']
 
 # === Part 2: Match and copy tree files ===
 directory = "Trees_red"
-tree_new_directory = "tree_matches"
+tree_new_directory = "tree_matches_all"
 
 # Extract species_taxids from merged_df
 species_taxids = merged_df['species_taxid'].astype(str).tolist()
 
 # List all .nwk files
-nwk_files = [f for f in os.listdir(directory) if f.endswith('_red_tree_converted.nwk')]
+nwk_files = [f for f in os.listdir(directory) if f.endswith('.nwk')]
 
 # Create the tree matches directory if it doesn't exist
 os.makedirs(tree_new_directory, exist_ok=True)
@@ -63,7 +63,7 @@ matched_taxids = set()
 
 # Filter for matching files and copy them
 for nwk_file in nwk_files:
-    file_taxid = nwk_file.split('_')[0]
+    file_taxid = os.path.splitext(nwk_file)[0].split('_')[-1]
     if file_taxid in species_taxids:
         matched_taxids.add(file_taxid)
         source_path = os.path.join(directory, nwk_file)
@@ -74,7 +74,7 @@ print(f"Tree files for {len(matched_taxids)} matched taxa have been copied to '{
 
 # === Part 3: Match and copy GPA matrix files ===
 gpa_directory = "GPA_matrices_red"
-gpa_new_directory = "gpa_matches"
+gpa_new_directory = "gpa_matches_all"
 
 # Create the GPA matches directory if it doesn't exist
 os.makedirs(gpa_new_directory, exist_ok=True)
@@ -85,17 +85,37 @@ for taxid in matched_taxids:
     gpa_path = os.path.join(gpa_directory, gpa_filename)
 
     if os.path.exists(gpa_path):
-        dest_csv = os.path.join(gpa_new_directory, gpa_filename)
-        shutil.copy(gpa_path, dest_csv)
+        print(f"Processing {gpa_filename}...")
         
-        dest_tab = os.path.join(
-            gpa_new_directory, f"{taxid}_REDUCED.tab"
-        )
-        convert_gpa_to_tab(dest_csv, dest_tab)
+        # Read, transpose, and save CSV
+        df_gpa = pd.read_csv(gpa_path, keep_default_na=False, na_values=[])
+        
+        print(f"Starting transpose for {gpa_filename}...")
+        df_gpa_t = df_gpa.transpose()
+        print(f"Finished transpose for {gpa_filename} (shape: {df_gpa_t.shape})")
+
+        # Make original first row, the headers
+        df_gpa_t.columns = df_gpa_t.iloc[0]
+        df_gpa_t = df_gpa_t.drop(df_gpa_t.index[0])
+        
+        # Save transposed .csv
+        dest_csv = os.path.join(gpa_new_directory, gpa_filename)
+        df_gpa_t.to_csv(dest_csv, index=True)
+
+        # Vectorised .tab creation
+        stacked = df_gpa_t.stack().reset_index()
+        stacked.columns = ['Gene', 'Genome', 'Value']
+
+        # Keep only presence calls (non-zero)
+        stacked = stacked[stacked['Value'].astype(str) != '0']
+
+        # Save to .tab (no header, tab-separated)
+        dest_tab = os.path.join(gpa_new_directory, f"{taxid}_REDUCED.tab")
+        stacked[['Gene', 'Genome']].to_csv(dest_tab, sep='\t', index=False, header=False)
 
 print(
     f"GPA matrix files for {len(matched_taxids)} matched taxa "
-    f"have been copied in CSV form and converted to .tab in '{gpa_new_directory}'."
+    f"have been transposed, saved as CSV, and converted to .tab in '{gpa_new_directory}'."
 )
 
 # Keep only rows in merged_df that matched a file
