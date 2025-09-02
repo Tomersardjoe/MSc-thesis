@@ -21,11 +21,14 @@ done
 mkdir -p "$out_base"
 
 # Loop through each tree file in the tree_matches directory
-for tree_file in "$tree_dir"/*_red_tree_converted.nwk; do
+for tree_file in "$tree_dir"/*.nwk; do
     
     # Extract species_taxid from filename
     filename=$(basename "$tree_file")
-    species_taxid="${filename%%_*}"
+    
+    # Remove extension
+    basename_noext="${filename%.nwk}"
+    species_taxid="${basename_noext##*_}"
 
     # Build path to corresponding GPA file
     gpa_file="${gpa_dir}/${species_taxid}_REDUCED.tab"
@@ -52,12 +55,21 @@ for tree_file in "$tree_dir"/*_red_tree_converted.nwk; do
     
     mkdir -p "$outdir"
 
+    # Remove 0-length branches for phylo.d compatability
+    fixed_tree="${outdir}/${species_taxid}_fixed.nwk"
+    Rscript -e "
+      suppressMessages(library(ape));
+      tr <- read.tree('$tree_file');
+      tr\$edge.length[tr\$edge.length <= 1e-8] <- 1e-6;
+      write.tree(tr, file='$fixed_tree')
+    "
+
     # Run Coinfinder
     (
       cd "$outdir" || exit
       coinfinder \
         -i "$gpa_file" \
-        -p "$tree_file" \
+        -p "${species_taxid}_fixed.nwk" \
         -a \
         -n \
         -E

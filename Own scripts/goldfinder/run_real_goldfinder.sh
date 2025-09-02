@@ -8,7 +8,7 @@ fi
 
 tree_dir="real_pangenomes/tree_matches"
 gpa_dir="real_pangenomes/gpa_matches"
-gold_dir="goldfinder/goldfinder
+gold_dir="goldfinder/goldfinder"
 out_base="real_pangenomes/goldfinder_runs"
 
 # Safety: bail if directories aren’t found
@@ -22,11 +22,14 @@ done
 mkdir -p "$out_base"
 
 # Loop through each tree file in the tree_matches directory
-for tree_file in "$tree_dir"/*_red_tree_converted.nwk; do
+for tree_file in "$tree_dir"/*.nwk; do
     
     # Extract species_taxid from filename
     filename=$(basename "$tree_file")
-    species_taxid="${filename%%_*}"
+    
+    # Remove extension
+    basename_noext="${filename%.nwk}"
+    species_taxid="${basename_noext##*_}"
 
     # Build path to corresponding GPA file
     gpa_file="${gpa_dir}/${species_taxid}_REDUCED.csv"
