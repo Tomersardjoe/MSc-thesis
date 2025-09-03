@@ -67,7 +67,7 @@ for tree_file in "$tree_dir"/*.nwk; do
     # Run Coinfinder
     (
       cd "$outdir" || exit
-      coinfinder \
+      NUMBA_NUM_THREADS=24 coinfinder \
         -i "$gpa_file" \
         -p "${species_taxid}_fixed.nwk" \
         -a \
