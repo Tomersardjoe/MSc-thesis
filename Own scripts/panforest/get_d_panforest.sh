@@ -29,19 +29,19 @@ for run_dir in "$panforest_dir"/*/; do
 
     # Skip if a _nodes.tsv already exists
     if ls "${run_dir}"*_nodes.tsv >/dev/null 2>&1; then
-        echo "  Skipping $run_id — _nodes.tsv already exists."
+        echo "  Skipping $run_id - _nodes.tsv already exists."
         continue
     fi
 
     # Skip if cleaned matrix already exists
     if [ -f "$cleaned_matrix" ]; then
-        echo "  Skipping $run_id — cleaned matrix already exists."
+        echo "  Skipping $run_id - cleaned matrix already exists."
         continue
     fi
 
     collapsed_matrix="${run_dir}collapsed_matrix.csv"
     if [ ! -f "$collapsed_matrix" ]; then
-        echo "  Skipping $run_id — no collapsed_matrix.csv found."
+        echo "  Skipping $run_id - no collapsed_matrix.csv found."
         continue
     fi
 
@@ -66,11 +66,11 @@ for run_dir in "$panforest_dir"/*/; do
     (
       cd "$run_dir" || exit
       echo "  Running calculate_d.R for $run_id..."
-      Rscript "$SCRIPT_DIR/../panforest/calculate_d.R" \
+      NUMBA_NUM_THREADS=24 Rscript "$SCRIPT_DIR/../panforest/calculate_d.R" \
           -a . \
           -t "$(realpath "$fixed_tree")" \
           -g "${run_id}_collapsed_matrix_clean.csv" \
-          -c 2 \
+          -c 1 \
           -o "$run_id"
     )
 
