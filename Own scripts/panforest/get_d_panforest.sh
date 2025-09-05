@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+
+required_env="analysis"
+if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
+    echo "Please activate the '$required_env' environment before running this script."
+    exit 1
+fi
+
+# Get the directory where this script lives
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+panforest_dir="$(realpath "real_pangenomes/panforest_runs")"
+coinfinder_dir="$(realpath "real_pangenomes/coinfinder_runs")"
+
+# Safety: bail if directories aren’t found
+for d in "$panforest_dir" "$coinfinder_dir"; do
+    if [ ! -d "$d" ]; then
+        echo "Error: Directory '$d' not found. Check the path."
+        exit 1
+    fi
+done
+
+# Loop through each subdirectory in panforest_runs
+for run_dir in "$panforest_dir"/*/; do
+    run_id=$(basename "$run_dir")
+    echo "Processing run: $run_id"
+
+    cleaned_matrix="${run_dir}${run_id}_collapsed_matrix_clean.csv"
+
+    # Skip if a _nodes.tsv already exists in this run_dir
+    if ls "${run_dir}"*_nodes.tsv >/dev/null 2>&1; then
+        echo "  Skipping $run_id — _nodes.tsv already exists."
+        continue
+    fi
+
+    # Skip if cleaned matrix already exists
+    if [ -f "$cleaned_matrix" ]; then
+        echo "  Skipping $run_id — cleaned matrix already exists."
+        continue
+    fi
+
+    collapsed_matrix="${run_dir}collapsed_matrix.csv"
+    if [ ! -f "$collapsed_matrix" ]; then
+        echo "  Skipping $run_id — no collapsed_matrix.csv found."
+        continue
+    fi
+
+    # Step 1: Run prep_d_calc.R (absolute path so run_id isn't ".")
+    collapsed_matrix_abs="$(realpath "$collapsed_matrix")"
+    echo "  Running prep_d_calc.R for $run_id..."
+    Rscript "$SCRIPT_DIR/prep_d_calc.R" "$collapsed_matrix_abs"
+
+    if [ ! -f "$cleaned_matrix" ]; then
+        echo "  Error: Cleaned matrix not found for $run_id after prep_d_calc.R"
+        continue
+    fi
+
+    # Step 2: Find matching fixed tree in coinfinder_runs
+    fixed_tree="${coinfinder_dir}/${run_id}/${run_id}_fixed.nwk"
+    if [ ! -f "$fixed_tree" ]; then
+        echo "  Skipping $run_id — fixed tree not found: $fixed_tree"
+        continue
+    fi
+
+    # Step 3: Run calculate_d.R inside run_dir (we keep cd here to localize outputs/logs)
+    (
+      cd "$run_dir" || exit
+      echo "  Running calculate_d.R for $run_id..."
+      Rscript "$SCRIPT_DIR/../panforest/calculate_d.R" \
+          -a . \
+          -t "$(realpath "$fixed_tree")" \
+          -g "${run_id}_collapsed_matrix_clean.csv" \
+          -c 4 \
+          -o "$run_id"
+    )
+
+    echo "  Finished $run_id"
+    echo
+done
