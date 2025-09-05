@@ -15,27 +15,21 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-for type in closed moderate open; do
-  for i in {1..10}; do
-    echo "Starting $type rep${i}..."
+# Loop over all subdirectories
+for dataset_dir in "$PARENT_DIR"/*/; do
+  # Skip if not a directory
+  [ -d "$dataset_dir" ] || continue
 
-    dataset_dir="${PARENT_DIR}/${type}/rep${i}"
+  echo "Starting $(basename "$dataset_dir")..."
 
-    if [ ! -d "$dataset_dir" ]; then
-      echo "Warning: $dataset_dir does not exist. Skipping."
-      continue
-    fi
+  # Run R script
+  Rscript "$SCRIPT_DIR/p_adj_coinfinder.R" "$dataset_dir" "$SIG_THRESH"
 
-    # Run R script
-    Rscript "$SCRIPT_DIR/p_adj_coinfinder.R" "$dataset_dir" "$SIG_THRESH"
+  # Run Python script
+  python3 "$SCRIPT_DIR/filter_sig.py" "$dataset_dir" "$SIG_THRESH"
 
-    # Run Python script
-    python3 "$SCRIPT_DIR/filter_sig.py" "$dataset_dir" "$SIG_THRESH"
-
-    echo "Finished $type rep${i}"
-    echo "-----------------------------"
-  done
+  echo "Finished $(basename "$dataset_dir")"
+  echo "-----------------------------"
 done
 
 echo "FDR-BH applied to all Coinfinder datasets."
-
