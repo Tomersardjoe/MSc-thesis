@@ -31,6 +31,11 @@ if (!is.na(match(0, tree$edge.length))) {
 }
 #Root phylogeny for input into comparative.data
 treeRt <- midpoint.root(tree)
+
+# Replace missing node labels with a placeholder
+treeRt$node.label[is.na(treeRt$node.label) | treeRt$node.label == ""] <-
+  paste0("Node_", seq_len(sum(is.na(treeRt$node.label) | treeRt$node.label == "")))
+
 treeRt <- makeLabel(treeRt)
 
 #Gene_pa read in
