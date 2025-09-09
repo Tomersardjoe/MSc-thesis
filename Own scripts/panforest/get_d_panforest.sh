@@ -20,10 +20,20 @@ for d in "$panforest_dir" "$coinfinder_dir"; do
     fi
 done
 
-# Loop through each subdirectory in panforest_runs
+# Loop through each subdirectory in panforest_runs and fix family group labels
 for run_dir in "$panforest_dir"/*/; do
     run_id=$(basename "$run_dir")
     echo "Processing run: $run_id"
+    
+    # Check if imp.csv exists and imp_fixed.csv doesn't
+    if [[ -f "$imp_csv" && ! -f "$imp_fixed" ]]; then
+        sed 's/^\([^,]*\)_family_group\(,\|$\)/\1\2/' "$imp_csv" > "$imp_fixed"
+        echo "  Fixed file created: $imp_fixed"
+    elif [[ -f "$imp_fixed" ]]; then
+        echo "  Skipping - $imp_fixed already exists."
+    else
+        echo "  No imp.csv found in $run_dir - skipping."
+    fi
 
     cleaned_matrix="${run_dir}${run_id}_collapsed_matrix_clean.csv"
 
@@ -58,7 +68,7 @@ for run_dir in "$panforest_dir"/*/; do
     # Step 2: Find matching fixed tree in coinfinder_runs
     fixed_tree="${coinfinder_dir}/${run_id}/${run_id}_fixed.nwk"
     if [ ! -f "$fixed_tree" ]; then
-        echo "  Skipping $run_id — fixed tree not found: $fixed_tree"
+        echo "  Skipping $run_id - fixed tree not found: $fixed_tree"
         continue
     fi
 
