@@ -63,8 +63,8 @@ nodes_in_pairs <- nodes %>% filter(ID %in% genes_in_pairs)
 #  )
 #})
 
-closest_matches_df <- do.call(rbind, closest_matches)
-closest_matches_df
+#closest_matches_df <- do.call(rbind, closest_matches)
+#closest_matches_df
 
 bin_w <- 0.25
 

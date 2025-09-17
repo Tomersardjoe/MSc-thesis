@@ -37,7 +37,7 @@ make_symmetric_mean <- function(mat) {
 }
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 2) {stop("Usage: Rscript imp_distribution.R /path/to/imp.csv /path/to/panforest/{run_id}_nodes.tsv")} # NOT THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
+if (length(args) < 2) {stop("Usage: Rscript imp_distribution.R /path/to/panforest/{run_id}/imp_fixed.csv /path/to/panforest/{run_id}_nodes.tsv")} # NOT THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
 
 imp_path <- args[1]
 dval_path <- args[2]
@@ -63,6 +63,10 @@ proj_point     <- scalar_proj %*% line_vec + matrix(rep(first_point, n), nrow = 
 distances      <- sqrt(rowSums((all_points - proj_point)^2))
 elbow_idx      <- which.max(distances)
 cutoff_value   <- sorted_scores[elbow_idx]
+
+# Save cutoff_value to a text file
+cutoff_file <- file.path(imp_dir, paste0(unique_id, "_cutoff_value.txt"))
+write(cutoff_value, file = cutoff_file)
 
 summary_stats <- data.frame(
   Stat  = c("Min", "Q1", "Median", "Mean", "Q3", "Max", "N", "ElbowCutoff"),
