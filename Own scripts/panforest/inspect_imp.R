@@ -2,27 +2,44 @@
 
 suppressPackageStartupMessages({
   library(ineq)
+  library(dplyr)
   library(ggplot2)
   library(ggrepel)
 })
 
-select_top_generalists <- function(df, n = 5) {
-  df$rank_total <- rank(-df$total_importance, ties.method = "min")   # higher is better
-  df$rank_mean  <- rank(-df$mean_importance, ties.method = "min")    # higher is better
-  df$rank_gini  <- rank(df$gini, ties.method = "min")                # lower is better
-  df$rank_dval  <- rank(df$D_value, ties.method = "min")             # lower is better
+select_top_generalists <- function(df, imp_mat, n = 5) {
+  # Calculate proportion of non-zero targets for each gene
+  prop_nonzero <- rowMeans(imp_mat != 0, na.rm = TRUE)
+  df$prop_nonzero <- prop_nonzero[match(df$gene, rownames(imp_mat))]
   
-  df$avg_rank <- (df$rank_total + df$rank_mean + df$rank_gini + df$rank_dval) / 4
+  # Rankings
+  df$rank_total    <- rank(-df$total_importance, ties.method = "min")   # higher is better
+  df$rank_mean     <- rank(-df$mean_importance, ties.method = "min")    # higher is better
+  df$rank_gini     <- rank(df$gini, ties.method = "min")                # lower is better
+  df$rank_dval     <- rank(df$D_value, ties.method = "min")             # lower is better
+  df$rank_nonzero  <- rank(-df$prop_nonzero, ties.method = "min")       # higher is better
+  
+  # Average rank including non-zero proportion
+  df$avg_rank <- (df$rank_total + df$rank_mean + df$rank_gini + df$rank_dval + df$rank_nonzero) / 5
+  
   df[order(df$avg_rank), ][1:n, ]
 }
 
-select_top_specialists <- function(df, n = 5) {
-  df$rank_total <- rank(-df$total_importance, ties.method = "min")   # higher is better
-  df$rank_mean  <- rank(df$mean_importance, ties.method = "min")     # lower is better
-  df$rank_gini  <- rank(-df$gini, ties.method = "min")               # higher is better
-  df$rank_dval  <- rank(df$D_value, ties.method = "min")             # lower is better
+select_top_specialists <- function(df, imp_mat, n = 5) {
+  # Calculate proportion of non-zero targets for each gene
+  prop_nonzero <- rowMeans(imp_mat != 0, na.rm = TRUE)
+  df$prop_nonzero <- prop_nonzero[match(df$gene, rownames(imp_mat))]
   
-  df$avg_rank <- (df$rank_total + df$rank_mean + df$rank_gini + df$rank_dval) / 4
+  # Rankings
+  df$rank_total    <- rank(-df$total_importance, ties.method = "min")   # higher is better
+  df$rank_mean     <- rank(df$mean_importance, ties.method = "min")     # lower is better
+  df$rank_gini     <- rank(-df$gini, ties.method = "min")               # higher is better
+  df$rank_dval     <- rank(df$D_value, ties.method = "min")             # lower is better
+  df$rank_nonzero  <- rank(df$prop_nonzero, ties.method = "min")        # lower is better
+  
+  # Average rank including non-zero proportion
+  df$avg_rank <- (df$rank_total + df$rank_mean + df$rank_gini + df$rank_dval + df$rank_nonzero) / 5
+  
   df[order(df$avg_rank), ][1:n, ]
 }
 
@@ -132,10 +149,10 @@ write.csv(
 )
 
 # Filter for plotting
-top_generalists      <- select_top_generalists(row_summary, n = 5)
-top_generalists_cut  <- select_top_generalists(row_summary_cut, n = 5)
-top_specialists      <- select_top_specialists(row_summary, n = 5)
-top_specialists_cut  <- select_top_specialists(row_summary_cut, n = 5)
+top_generalists      <- select_top_generalists(row_summary,      imp_mat, n = 5)
+top_generalists_cut  <- select_top_generalists(row_summary_cut,  imp_mat, n = 5)
+top_specialists      <- select_top_specialists(row_summary,      imp_mat, n = 5)
+top_specialists_cut  <- select_top_specialists(row_summary_cut,  imp_mat, n = 5)
 
 # Count how many genes in total
 n_genes <- nrow(row_summary)
@@ -148,42 +165,33 @@ if (nrow(top_specialists) > 0) outline_levels <- c(outline_levels, "Focused cont
 # Identify the gene with the highest mean importance (unfiltered)
 outlier_unfiltered <- row_summary[which.max(row_summary$mean_importance), , drop = FALSE]
 
+# Combine all labelled points into one data frame
+label_df <- bind_rows(
+  top_generalists  %>% mutate(label_color = "black", outline_color = "black"),
+  top_specialists  %>% mutate(label_color = "blue",  outline_color = "blue"),
+  outlier_unfiltered %>% mutate(label_color = "black", outline_color = "red")
+)
+
 p_unfiltered <- ggplot(row_summary, aes(x = mean_importance,
                                         y = gini,
                                         size = total_importance,
                                         color = D_value)) +
-  # Background cloud
   geom_point(alpha = 0.6, shape = 16) +
-  
-  # Scales with explicit legend order
-  scale_size_continuous(
-    range = c(0.5, 4),
-    guide = guide_legend(order = 1,
-                         override.aes = list(shape = 16, colour = "black", fill = "black", alpha = 0.6))
-  ) +
-  scale_color_viridis_c(
-    option = "magma", direction = -1,
-    guide = guide_colorbar(order = 3)
-  ) +
-  scale_shape_manual(
-    values = c("Broad contributor" = 21,
-               "Focused contributor" = 21,
-               "Highest mean importance" = 21)
-  ) +
-  guides(
-    shape = guide_legend(
-      order = 1,
-      override.aes = list(
-        shape  = c(21, 21, 21),
-        fill   = c(NA, NA, NA),
-        colour = c("black", "blue", "red"),  # black = broad, blue = focused, red = higesht mean importance
-        size   = 4,
-        alpha  = 1,
-        stroke = 0.6
-      )
-    )
-  ) +
-  
+  scale_size_continuous(range = c(0.5, 4),
+                        guide = guide_legend(order = 1,
+                                             override.aes = list(shape = 16, colour = "black", fill = "black", alpha = 0.6))) +
+  scale_color_viridis_c(option = "magma", direction = -1,
+                        guide = guide_colorbar(order = 3)) +
+  scale_shape_manual(values = c("Broad contributor" = 21,
+                                "Focused contributor" = 21,
+                                "Highest mean importance" = 21)) +
+  guides(shape = guide_legend(order = 1,
+                              override.aes = list(shape  = c(21, 21, 21),
+                                                  fill   = c(NA, NA, NA),
+                                                  colour = c("black", "blue", "red"),
+                                                  size   = 4,
+                                                  alpha  = 1,
+                                                  stroke = 0.6))) +
   labs(
     title = paste("Mean importance vs Gini with D-values for", unique_id),
     subtitle = sprintf("D-cutoff = %.3f | %.1f%% survived (n = %d of %d)",
@@ -195,49 +203,41 @@ p_unfiltered <- ggplot(row_summary, aes(x = mean_importance,
   ) +
   theme_bw(base_size = 14) +
 
-  # Generalists
+  # Points for each category
   geom_point(data = top_generalists,
-             aes(x = mean_importance, y = gini, size = total_importance, color = D_value),
-             inherit.aes = FALSE, alpha = 0.9, shape = 16) +
+             aes(size = total_importance, color = D_value),
+             alpha = 0.9, shape = 16) +
   geom_point(data = top_generalists,
-             aes(x = mean_importance, y = gini, size = total_importance),
-             inherit.aes = FALSE, shape = 21, fill = NA, colour = "black", stroke = 0.6) +
-  geom_text_repel(data = top_generalists,
-                  aes(x = mean_importance, y = gini, label = gene),
-                  inherit.aes = FALSE, size = 3, color = "black",
-                  bg.color = "white", bg.r = 0.15,
-                  box.padding = 0.5, point.padding = 0.3,
-                  force = 1.5, segment.size = 0.2, max.overlaps = Inf) +
+             aes(size = total_importance),
+             shape = 21, fill = NA, colour = "black", stroke = 0.6) +
 
-  # Specialists
   geom_point(data = top_specialists,
-             aes(x = mean_importance, y = gini, size = total_importance, color = D_value),
-             inherit.aes = FALSE, alpha = 0.9, shape = 16) +
+             aes(size = total_importance, color = D_value),
+             alpha = 0.9, shape = 16) +
   geom_point(data = top_specialists,
-             aes(x = mean_importance, y = gini, size = total_importance),
-             inherit.aes = FALSE, shape = 21, fill = NA, colour = "blue", stroke = 0.6) +
-  geom_text_repel(data = top_specialists,
-                  aes(x = mean_importance, y = gini, label = gene),
-                  inherit.aes = FALSE, size = 3, color = "blue",
-                  bg.color = "white", bg.r = 0.15,
-                  box.padding = 0.5, point.padding = 0.3,
-                  force = 1.5, segment.size = 0.2, max.overlaps = Inf) +
+             aes(size = total_importance),
+             shape = 21, fill = NA, colour = "blue", stroke = 0.6) +
 
-  # Outlier with max mean importance (unfiltered)
   geom_point(data = outlier_unfiltered,
-             aes(x = mean_importance, y = gini, size = total_importance, color = D_value),
-             inherit.aes = FALSE, shape = 16, alpha = 1) +
+             aes(size = total_importance, color = D_value),
+             shape = 16, alpha = 1) +
   geom_point(data = outlier_unfiltered,
-             aes(x = mean_importance, y = gini, size = total_importance),
-             inherit.aes = FALSE, shape = 21, fill = NA, colour = "red", stroke = 0.8) +
-  geom_text_repel(data = outlier_unfiltered,
-                  aes(x = mean_importance, y = gini, label = gene),
-                  inherit.aes = FALSE, size = 3, color = "black",
-                  bg.color = "white", bg.r = 0.15,
-                  box.padding = 0.6, point.padding = 0.3,
-                  force = 2, segment.size = 0.3, max.overlaps = Inf) +
+             aes(size = total_importance),
+             shape = 21, fill = NA, colour = "red", stroke = 0.6) +
 
-  # Dummy legend points (invisible but trigger legend)
+  # Single geom_text_repel for all labels
+  ggrepel::geom_text_repel(
+    data = label_df,
+    aes(label = gene, color = NULL),  # don't map color to D_value here
+    size = 3,
+    color = label_df$label_color,
+    bg.color = "white", bg.r = 0.15,
+    box.padding = 0.4, point.padding = 0.7,
+    min.segment.length = 0.01,
+    force = 1.7, segment.size = 0.2, max.overlaps = Inf
+  ) +
+
+  # Dummy legend points
   geom_point(
     data = data.frame(
       highlight = c("Broad contributor", "Focused contributor", "Highest mean importance"),
@@ -250,6 +250,7 @@ p_unfiltered <- ggplot(row_summary, aes(x = mean_importance,
     show.legend = TRUE
   )
 
+# Save
 ggsave(file.path(imp_dir, paste0(unique_id, "_mean_vs_gini.png")),
        plot = p_unfiltered, width = 8, height = 6, dpi = 300, bg = "white")
 
@@ -264,42 +265,37 @@ if (nrow(top_specialists_cut) > 0) outline_levels <- c(outline_levels, "Focused 
 # Identify the gene with the highest mean importance
 outlier_cut <- row_summary_cut[which.max(row_summary_cut$mean_importance), , drop = FALSE]
 
+# Combine all labelled points into one data frame
+label_df_cut <- bind_rows(
+  top_generalists_cut  %>% mutate(label_color = "black", outline_color = "black"),
+  top_specialists_cut  %>% mutate(label_color = "blue",  outline_color = "blue"),
+  outlier_cut %>% mutate(label_color = "black", outline_color = "red")
+)
+
 p_filtered <- ggplot(row_summary_cut, aes(x = mean_importance,
                                           y = gini,
                                           size = total_importance,
                                           color = D_value)) +
-  # Background cloud
   geom_point(alpha = 0.6, shape = 16) +
-  
-  # Scales with explicit legend order
   scale_size_continuous(
     range = c(0.5, 4),
     guide = guide_legend(order = 1,
                          override.aes = list(shape = 16, colour = "black", fill = "black", alpha = 0.6))
   ) +
-  scale_color_viridis_c(
-    option = "magma", direction = -1,
-    guide = guide_colorbar(order = 3)
-  ) +
-  scale_shape_manual(
-    values = c("Broad contributor" = 21,
-               "Focused contributor" = 21,
-               "Highest mean importance" = 21)
-  ) +
-  guides(
-    shape = guide_legend(
-      order = 1,
-      override.aes = list(
-        shape  = c(21, 21, 21),
-        fill   = c(NA, NA, NA),
-        colour = c("black", "blue", "red"),  # black = broad, blue = focused, red = highest mean importance
-        size   = 4,
-        alpha  = 1,
-        stroke = 0.6
-      )
-    )
-  ) +
-  
+  scale_color_viridis_c(option = "magma", direction = -1,
+                        guide = guide_colorbar(order = 3)) +
+  scale_shape_manual(values = c("Broad contributor" = 21,
+                                "Focused contributor" = 21,
+                                "Highest mean importance" = 21)) +
+  guides(shape = guide_legend(order = 1,
+                              override.aes = list(
+                                shape  = c(21, 21, 21),
+                                fill   = c(NA, NA, NA),
+                                colour = c("black", "blue", "red"),
+                                size   = 4,
+                                alpha  = 1,
+                                stroke = 0.6
+                              ))) +
   labs(
     title = paste("Mean importance vs Gini with D-values for", unique_id),
     subtitle = sprintf("Importance cutoff = %.3f | %.1f%% survived (n = %d of %d)",
@@ -307,51 +303,45 @@ p_filtered <- ggplot(row_summary_cut, aes(x = mean_importance,
     x = "Mean importance per target",
     y = "Gini coefficient",
     size = "Total importance",
-    shape = "Outline" 
+    shape = "Outline"
   ) +
   theme_bw(base_size = 14) +
 
-  # Generalists
+  # Points for generalists
   geom_point(data = top_generalists_cut,
-             aes(x = mean_importance, y = gini, size = total_importance, color = D_value),
-             inherit.aes = FALSE, alpha = 0.9, shape = 16) +
+             aes(size = total_importance, color = D_value),
+             alpha = 0.9, shape = 16) +
   geom_point(data = top_generalists_cut,
-             aes(x = mean_importance, y = gini, size = total_importance),
-             inherit.aes = FALSE, shape = 21, fill = NA, colour = "black", stroke = 0.6) +
-  geom_text_repel(data = top_generalists_cut,
-                  aes(x = mean_importance, y = gini, label = gene),
-                  inherit.aes = FALSE, size = 3, color = "black",
-                  bg.color = "white", bg.r = 0.15,
-                  box.padding = 0.5, point.padding = 0.3,
-                  force = 1.5, segment.size = 0.2, max.overlaps = Inf) +
+             aes(size = total_importance),
+             shape = 21, fill = NA, colour = "black", stroke = 0.6) +
 
-  # Specialists
+  # Points for specialists
   geom_point(data = top_specialists_cut,
-             aes(x = mean_importance, y = gini, size = total_importance, color = D_value),
-             inherit.aes = FALSE, alpha = 0.9, shape = 16) +
+             aes(size = total_importance, color = D_value),
+             alpha = 0.9, shape = 16) +
   geom_point(data = top_specialists_cut,
-             aes(x = mean_importance, y = gini, size = total_importance),
-             inherit.aes = FALSE, shape = 21, fill = NA, colour = "blue", stroke = 0.6) +
-  geom_text_repel(data = top_specialists_cut,
-                  aes(x = mean_importance, y = gini, label = gene),
-                  inherit.aes = FALSE, size = 3, color = "blue",
-                  bg.color = "white", bg.r = 0.15,
-                  box.padding = 0.5, point.padding = 0.3,
-                  force = 1.5, segment.size = 0.2, max.overlaps = Inf) +
+             aes(size = total_importance),
+             shape = 21, fill = NA, colour = "blue", stroke = 0.6) +
 
-  # Outlier with max mean importance
+  # Points for outlier
   geom_point(data = outlier_cut,
-             aes(x = mean_importance, y = gini, size = total_importance, color = D_value),
-             inherit.aes = FALSE, shape = 16, alpha = 1) +
+             aes(size = total_importance, color = D_value),
+             shape = 16, alpha = 1) +
   geom_point(data = outlier_cut,
-             aes(x = mean_importance, y = gini, size = total_importance),
-             inherit.aes = FALSE, shape = 21, fill = NA, colour = "red", stroke = 0.8) +
-  geom_text_repel(data = outlier_cut,
-                  aes(x = mean_importance, y = gini, label = gene),
-                  inherit.aes = FALSE, size = 3, color = "black",
-                  bg.color = "white", bg.r = 0.15,
-                  box.padding = 0.6, point.padding = 0.3,
-                  force = 2, segment.size = 0.3, max.overlaps = Inf) +
+             aes(size = total_importance),
+             shape = 21, fill = NA, colour = "red", stroke = 0.6) +
+
+  # Single geom_text_repel for all labels
+  geom_text_repel(
+    data = label_df_cut,
+    aes(label = gene),
+    size = 3,
+    color = label_df_cut$label_color,
+    bg.color = "white", bg.r = 0.15,
+    box.padding = 0.4, point.padding = 0.7,
+    min.segment.length = 0.01,
+    force = 1., segment.size = 0.2, max.overlaps = Inf
+  ) +
 
   # Dummy legend points
   geom_point(
@@ -369,7 +359,62 @@ p_filtered <- ggplot(row_summary_cut, aes(x = mean_importance,
 ggsave(file.path(imp_dir, paste0(unique_id, "_mean_vs_gini_filtered.png")),
        plot = p_filtered, width = 8, height = 6, dpi = 300, bg = "white")
 
-sorted_totals <- sort(row_sum, decreasing = TRUE)
-top_ratio <- sorted_totals[1] / sorted_totals[2]
+# Pick one generalist and one specialist to compare
+gen_gene <- top_generalists_cut$gene[1]
+spec_gene <- top_specialists_cut$gene[1]
 
-cat("\nTop-to-second importance ratio:", top_ratio, "\n")
+# Extract values from unthresholded matrix
+gen_vals <- as.numeric(imp_mat[gen_gene, ])
+spec_vals <- as.numeric(imp_mat[spec_gene, ])
+
+# Keep zeros (important for sparsity story)
+gen_vals <- gen_vals[!is.na(gen_vals)]
+spec_vals <- spec_vals[!is.na(spec_vals)]
+
+# Combine into one data frame
+plot_df <- data.frame(
+  Importance = c(gen_vals, spec_vals),
+  Type = c(rep("Broad contributor", length(gen_vals)),
+           rep("Focused contributor", length(spec_vals)))
+)
+
+zero_counts <- plot_df %>%
+  group_by(Type) %>% # There is only one gene per type
+  summarise(
+    zeros = sum(Importance == 0),
+    total = n(),
+    perc_zeros = round(100 * zeros / total, 1)
+  )
+
+# Add a label column for display
+zero_counts <- zero_counts %>%
+  mutate(label = paste0("0-scores: ", zeros, " (", perc_zeros, "%)"))
+
+# Log-scaled density plot
+p_log <- ggplot(plot_df, aes(x = Importance, fill = Type)) +
+  geom_density(alpha = 0.5, adjust = 1) +
+  facet_wrap(~ Type, scales = "fixed") +
+  scale_y_continuous(trans = "log1p") +  # log(1 + y)
+  scale_fill_manual(values = c("Broad contributor" = "#1b9e77",
+                               "Focused contributor" = "#d95f02")) +
+  labs(
+    title = paste("Log-transformed importance distribution for", unique_id),
+    subtitle = paste(gen_gene, "(broad) vs", spec_gene, "(focused)"),
+    x = "Importance score",
+    y = expression(log[1](1 + density))
+  ) +
+  theme_minimal(base_size = 14) +
+  # Add zero count labels in top-right of each facet
+  geom_text(
+    data = zero_counts,
+    aes(
+      x = max(plot_df$Importance) * 0.95,
+      y = Inf,
+      label = label
+    ),
+    inherit.aes = FALSE,
+    hjust = 1, vjust = 1.5
+  )
+
+ggsave(file.path(imp_dir, paste0(unique_id, "_imp_density.png")),
+       plot = p_log, width = 8, height = 6, dpi = 300, bg = "white")
