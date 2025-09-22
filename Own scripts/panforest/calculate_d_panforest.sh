@@ -8,7 +8,7 @@ fi
 
 # Get the directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
+panscript_dir="$(realpath "panforest")"
 panforest_dir="$(realpath "real_pangenomes/panforest_runs")"
 coinfinder_dir="$(realpath "real_pangenomes/coinfinder_runs")"
 
@@ -20,15 +20,18 @@ for d in "$panforest_dir" "$coinfinder_dir"; do
     fi
 done
 
-# Loop through each subdirectory in panforest_runs and fix family group labels
+# Loop through each subdirectory in panforest_runs
 for run_dir in "$panforest_dir"/*/; do
     run_id=$(basename "$run_dir")
     echo "Processing run: $run_id"
-    
-    imp_csv="${run_dir}imp.csv"
-    imp_fixed="${run_dir}imp_fixed.csv"
 
-    # Check if imp.csv exists and imp_fixed.csv doesn't
+    # Ensure imp_cutoff exists
+    mkdir -p "${run_dir}imp_cutoff"
+
+    imp_csv="${run_dir}imp.csv"
+    imp_fixed="${run_dir}imp_cutoff/imp_fixed.csv"
+
+    # Fix family group labels
     if [[ -f "$imp_csv" && ! -f "$imp_fixed" ]]; then
         sed 's/^\([^,]*\)_family_group\(,\|$\)/\1\2/' "$imp_csv" > "$imp_fixed"
         echo "  Fixed file created: $imp_fixed"
@@ -36,13 +39,15 @@ for run_dir in "$panforest_dir"/*/; do
         echo "  Skipping - $imp_fixed already exists."
     else
         echo "  No imp.csv found in $run_dir - skipping."
+        continue
     fi
 
-    cleaned_matrix="${run_dir}${run_id}_collapsed_matrix_clean.csv"
+    cleaned_matrix="${run_dir}imp_cutoff/${run_id}_collapsed_matrix_clean.csv"
+    nodes_tsv="${run_dir}imp_cutoff/${run_id}_nodes.tsv"
 
     # Skip if a _nodes.tsv already exists
-    if ls "${run_dir}"*_nodes.tsv >/dev/null 2>&1; then
-        echo "  Skipping $run_id - _nodes.tsv already exists."
+    if [ -f "$nodes_tsv" ]; then
+        echo "  Skipping $run_id - $nodes_tsv already exists."
         continue
     fi
 
@@ -61,7 +66,7 @@ for run_dir in "$panforest_dir"/*/; do
     # Step 1: Run prep_d_calc.R
     collapsed_matrix_abs="$(realpath "$collapsed_matrix")"
     echo "  Running prep_d_calc.R for $run_id..."
-    Rscript "$SCRIPT_DIR/prep_d_calc.R" "$collapsed_matrix_abs"
+    Rscript "$SCRIPT_DIR/prep_d_calc.R" "$collapsed_matrix_abs" "${run_dir}imp_cutoff"
 
     if [ ! -f "$cleaned_matrix" ]; then
         echo "  Error: Cleaned matrix not found for $run_id after prep_d_calc.R"
@@ -79,12 +84,12 @@ for run_dir in "$panforest_dir"/*/; do
     (
       cd "$run_dir" || exit
       echo "  Running calculate_d.R for $run_id..."
-      NUMBA_NUM_THREADS=24 Rscript "$SCRIPT_DIR/../panforest/calculate_d.R" \
+      NUMBA_NUM_THREADS=24 Rscript "$panscript_dir/calculate_d.R" \
           -a . \
           -t "$(realpath "$fixed_tree")" \
-          -g "${run_id}_collapsed_matrix_clean.csv" \
+          -g "imp_cutoff/${run_id}_collapsed_matrix_clean.csv" \
           -c 1 \
-          -o "$run_id"
+          -o "imp_cutoff"
     )
 
     echo "  Finished $run_id"

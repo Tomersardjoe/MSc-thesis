@@ -20,8 +20,8 @@ for run_dir in "$panforest_root"/*/; do
     run_id=$(basename "$run_dir")
     echo "Processing run: $run_id"
 
-    imp_file="${run_dir}imp_fixed.csv"
-    dval_file="${run_dir}${run_id}_nodes.tsv"
+    imp_file="${run_dir}imp_cutoff/imp_fixed.csv"
+    dval_file="${run_dir}imp_cutoff/${run_id}_nodes.tsv"
 
     # Check that both required files exist
     missing=false

@@ -37,13 +37,15 @@ make_symmetric_mean <- function(mat) {
 }
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 2) {stop("Usage: Rscript imp_distribution.R /path/to/panforest/{run_id}/imp_fixed.csv /path/to/panforest/{run_id}_nodes.tsv")} # NOT THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
+if (length(args) < 2) {stop("Usage: Rscript imp_distribution.R /path/to/panforest/{run_id}/imp_cutoff/imp_fixed.csv /path/to/panforest/imp_cutoff/{run_id}_nodes.tsv")} # NOT THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
 
 imp_path <- args[1]
 dval_path <- args[2]
-imp_dir  <- dirname(imp_path)
 
-unique_id <- basename(dirname(imp_path))
+imp_dir  <- dirname(imp_path)
+out_dir  <- imp_dir
+unique_id <- basename(dirname(imp_dir))
+
 
 imp            <- read.csv(imp_path, row.names = 1, check.names = FALSE)
 imp_mat_sym    <- make_symmetric_mean(as.matrix(imp))
@@ -82,7 +84,7 @@ elbow_idx    <- which.max(distances)
 cutoff_value <- sorted_scores[elbow_idx]
 
 # Save cutoff_value to a text file
-cutoff_file <- file.path(imp_dir, paste0(unique_id, "_cutoff_value.txt"))
+cutoff_file <- file.path(out_dir, paste0(unique_id, "_cutoff_value.txt"))
 write(cutoff_value, file = cutoff_file)
 
 cat("Restricted distance-based cutoff written to:", cutoff_file, "\n")
@@ -102,7 +104,7 @@ summary_stats <- data.frame(
   )
 )
 
-stats_file <- file.path(imp_dir, "hist_stats.csv")
+stats_file <- file.path(out_dir, "hist_stats.csv")
 write.csv(summary_stats, stats_file, row.names = FALSE)
 stats_vals <- setNames(summary_stats$Value, summary_stats$Stat)
 
@@ -209,7 +211,7 @@ p_cdf <- ggplot(df_cdf, aes(x = score, y = cum_prop)) +
 
 combined <- p_density + p_cdf
 
-output_file_combined <- file.path(imp_dir, "importance_two_panel.png")
+output_file_combined <- file.path(out_dir, "importance_two_panel.png")
 ggsave(output_file_combined, plot = combined, width = 12, height = 6, dpi = 300)
 
 # Per-gene summaries
@@ -238,7 +240,7 @@ df_means <- data.frame(
 p_counts <- ggplot(df_counts, aes(x = value)) +
   geom_histogram(binwidth = 1, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
   labs(
-    title = "Distribution of strong partner counts per gene",
+    title = "Distribution of gene partners",
     subtitle = paste0("Cutoff = ", round(cutoff_value, 3)),
     x = "Number of partners >= cutoff",
     y = "Gene count"
@@ -248,9 +250,9 @@ p_counts <- ggplot(df_counts, aes(x = value)) +
 p_means <- ggplot(df_means, aes(x = value)) +
   geom_histogram(fill = "#fc9272", color = "#cb181d", alpha = 0.6, bins = 30) +
   labs(
-    title = "Distribution of mean strong scores per gene",
+    title = "Distribution of mean importance scores",
     subtitle = paste0("Cutoff = ", round(cutoff_value, 3)),
-    x = "Mean importance score (>= cutoff)",
+    x = "Mean importance score >= cutoff",
     y = "Gene count"
   ) +
   theme_minimal()
@@ -258,7 +260,7 @@ p_means <- ggplot(df_means, aes(x = value)) +
 # Combine into two-panel figure
 combined_gene_plots <- p_counts + p_means
 
-output_file_genes <- file.path(imp_dir, "per_gene_histograms.png")
+output_file_genes <- file.path(out_dir, "per_gene_histograms.png")
 ggsave(output_file_genes, plot = combined_gene_plots, width = 12, height = 6, dpi = 300)
 
 # Read D-values (genes)
@@ -291,48 +293,86 @@ if (length(missing_genes) > 0) {
           if (length(missing_genes) > 10) " ...")
 }
 
-# Histogram 1: all associating genes vs D-value
-p_dval_genes <- ggplot(
-  data.frame(Dvalue = dval_map[gene_names]),
-  aes(x = Dvalue)
-) +
-  geom_histogram(fill = "#6baed6", color = "#08519c", alpha = 0.6, bins = 50) +
+# -------------------------
+# Histogram 1: gene-level D-values
+# -------------------------
+
+# Build a data frame of gene-level D-values
+df_genes <- data.frame(
+  Gene = gene_names,
+  Dvalue = dval_map[gene_names],
+  stringsAsFactors = FALSE
+)
+
+p_hist_genes <- ggplot(df_genes, aes(x = Dvalue)) +
+  geom_histogram(
+    binwidth = 0.25, boundary = cutoff_value,
+    fill = "#6baed6", color = "#08519c", alpha = 0.6
+  ) +
+  geom_vline(
+    xintercept = cutoff_value,
+    linetype = "dashed", color = "#e31a1c", linewidth = 1
+  ) +
+  scale_x_continuous(
+    breaks = seq(
+      floor(min(df_genes$Dvalue, na.rm = TRUE)),
+      ceiling(max(df_genes$Dvalue, na.rm = TRUE)),
+      by = 0.25
+    )
+  ) +
   labs(
-    title = "Associating genes vs D-value",
-    x = "D-value",
-    y = "Number of genes"
+    title = paste("Distribution of gene D-values -", unique_id),
+    x = "D-value", y = "Gene count"
   ) +
   theme_minimal()
 
-# Histogram 2: all associating gene pairs vs D-value
+# -------------------------
+# Histogram 2: pair-level D-values
+# -------------------------
 
 pair_list <- which(strong_mat & upper_idx, arr.ind = TRUE)
 
 if (nrow(pair_list) > 0) {
   g1 <- gene_names[pair_list[, 1]]
   g2 <- gene_names[pair_list[, 2]]
-  df_pair_dvals <- data.frame(
-    Dvalue = c(dval_map[g1], dval_map[g2]),
+  df_pairs <- data.frame(
+    d_source = dval_map[g1],
+    d_target = dval_map[g2],
     stringsAsFactors = FALSE
   )
+  # Pair-level D-value = minimum of the two genes' D-values
+  df_pairs$d_pair <- pmin(df_pairs$d_source, df_pairs$d_target, na.rm = TRUE)
 } else {
   warning("No strong gene pairs found above cutoff - pair D-value histogram will be empty.")
-  df_pair_dvals <- data.frame(Dvalue = numeric(0))
+  df_pairs <- data.frame(d_pair = numeric(0))
 }
 
-p_dval_pairs <- ggplot(df_pair_dvals, aes(x = Dvalue)) +
-  geom_histogram(fill = "#fc9272", color = "#cb181d", alpha = 0.6, bins = 50) +
+p_hist_pairs <- ggplot(df_pairs, aes(x = d_pair)) +
+  geom_histogram(
+    binwidth = 0.25, boundary = cutoff_value,
+    fill = "#fdae6b", color = "#e6550d", alpha = 0.6
+  ) +
+  geom_vline(
+    xintercept = cutoff_value,
+    linetype = "dashed", color = "#e31a1c", linewidth = 1
+  ) +
+  scale_x_continuous(
+    breaks = seq(
+      floor(min(df_genes$Dvalue, na.rm = TRUE)),
+      ceiling(max(df_genes$Dvalue, na.rm = TRUE)),
+      by = 0.25
+    )
+  ) +
   labs(
-    title = "Associating gene pairs vs D-value",
-    subtitle = "Each gene in a pair contributes its own D-value",
-    x = "D-value",
-    y = "Number of genes in pairs"
+    title = paste("Distribution of gene pairs D-values -", unique_id),
+    x = "D-value (min of source & target)",
+    y = "Pair count"
   ) +
   theme_minimal()
 
 # Combine into two-panel figure
-combined_dval_plots <- p_dval_genes + p_dval_pairs
-output_file_dvals <- file.path(imp_dir, "dvalue_histograms.png")
+combined_dval_plots <- p_hist_genes + p_hist_pairs
+output_file_dvals <- file.path(out_dir, "dvalue_histograms.png")
 ggsave(output_file_dvals, plot = combined_dval_plots, width = 12, height = 6, dpi = 300)
 
 cat("Elbow cutoff figures saved to:", output_file_combined, "\n")
@@ -390,7 +430,7 @@ if (nrow(pair_list) > 0) {
 df_out <- bind_rows(df_genes, df_pairs)
 
 # Write to CSV
-write_csv(df_out, file.path(imp_dir, paste0("panforest_dvalues_", unique_id, ".csv")))
+write_csv(df_out, file.path(out_dir, paste0("panforest_dvalues_", unique_id, ".csv")))
 
 message("D-value CSV saved to: ",
-        file.path(imp_dir, paste0("panforest_dvalues_", unique_id, ".csv")))
+        file.path(out_dir, paste0("panforest_dvalues_", unique_id, ".csv")))

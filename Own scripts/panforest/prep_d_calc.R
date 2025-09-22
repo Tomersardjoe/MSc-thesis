@@ -10,8 +10,14 @@ input_file <- args[1]
 input_dir  <- dirname(normalizePath(input_file))
 run_id     <- basename(input_dir)
 
-nodes_in_file     <- file.path(input_dir, paste0(run_id, "_nodes_in.csv"))
-clean_matrix_file <- file.path(input_dir, paste0(run_id, "_collapsed_matrix_clean.csv"))
+# Define output directory inside the run directory
+out_dir <- file.path(input_dir, "imp_cutoff")
+if (!dir.exists(out_dir)) {
+  dir.create(out_dir, recursive = TRUE)
+}
+
+nodes_in_file     <- file.path(out_dir, paste0(run_id, "_nodes_in.csv"))
+clean_matrix_file <- file.path(out_dir, paste0(run_id, "_collapsed_matrix_clean.csv"))
 
 # Read the collapsed presence/absence matrix
 collapsed <- read.csv(input_file, header = TRUE, check.names = FALSE, stringsAsFactors = FALSE)

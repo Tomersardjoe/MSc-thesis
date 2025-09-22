@@ -12,14 +12,20 @@ spec <- matrix(c('path', 'a', 1, "character",
                  'cores', 'c', 1, "integer",
                  'output', 'o', 1, "character"), byrow=TRUE, ncol=4)
 opt <- getopt(spec)
-#hardcoded
-#opt = list("~/OneDrive - The University of Nottingham/Post_doc_notts/Software/pangenome_rf/test_results/", "strain_phylogeny_mod.phy", "collapsed_matrix.csv", 1, "d_test")
-#names(opt) = c("path", "phylogeny", "gene_pa", "cores", "output")
-#setwd(opt$path)
+
+# Ensure output directory exists
+out_dir <- normalizePath(opt$output, mustWork = FALSE)
+if (!dir.exists(out_dir)) {
+  dir.create(out_dir, recursive = TRUE)
+}
+
+# Build paths inside output directory
+run_id <- basename(normalizePath(opt$path))
+nodes_in_file <- file.path(out_dir, paste0(run_id, "_nodes_in.csv"))
+nodes_tsv     <- file.path(out_dir, paste0(run_id, "_nodes.tsv"))
 
 #Read in
-outstr <- paste(opt$output, "_nodes_in.csv", sep="")
-genes  <- read.csv(outstr, check.names=TRUE) #"coincident_nodes_in.csv")
+genes  <- read.csv(nodes_in_file, check.names=TRUE) #"coincident_nodes_in.csv")
 
 #Read in tree
 tree <- read.tree(opt$phylogeny)
@@ -119,8 +125,10 @@ if (availcores < opt$cores) {
 }
 print("Cores is set to:")
 print(cores)
-outstr <- paste(opt$output, "_nodes.tsv", sep="")
-write(paste("ID","Result",sep="\t"),file=outstr,append=FALSE)
+
+# Write header to output file
+write(paste("ID","Result",sep="\t"), file = nodes_tsv, append = FALSE)
+
 parallelCluster <- parallel::makeCluster(cores, type="FORK")
 mkWorker <- function(dataset) {
   library(flock)
@@ -132,7 +140,7 @@ mkWorker <- function(dataset) {
       result <- eval(parse(text=paste("caper::phylo.d(data=dataset, binvar=",binvarry,", permut=1000)", sep="")))
       line <- paste(binvarry,result$DEstimate, sep="\t")
       locked_towrite <- flock::lock("./.lock")
-      write(line,file=outstr,append=TRUE)
+      write(line,file=nodes_tsv,append=TRUE)
       flock::unlock(locked_towrite)
       rm(result)
     }

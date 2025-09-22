@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 panforest_dir="$(realpath "real_pangenomes/panforest_runs")"
 coinfinder_dir="$(realpath "real_pangenomes/coinfinder_runs")"
-simplify_matrix_dir="$(realpath "panforest")"
+panscript_dir="$(realpath "panforest")"
 
 # Safety: bail if directories aren’t found
 for d in "$panforest_dir" "$coinfinder_dir"; do
@@ -26,9 +26,9 @@ for run_dir in "$panforest_dir"/*/; do
     run_id=$(basename "$run_dir")
     echo "Processing run: $run_id"
 
-    imp_file="${run_dir}imp_fixed.csv"
-    nodes_file="${run_dir}${run_id}_nodes.tsv"
-    cutoff_file="${run_dir}${run_id}_cutoff_value.txt"
+    imp_file="${run_dir}imp_cutoff/imp_fixed.csv"
+    nodes_file="${run_dir}imp_cutoff/${run_id}_nodes.tsv"
+    cutoff_file="${run_dir}imp_cutoff/${run_id}_cutoff_value.txt"
     dcutoff_file="${coinfinder_dir}/${run_id}/d_cutoff/${run_id}_d_cutoff.txt"
 
     # Check that all required files exist
@@ -49,16 +49,16 @@ for run_dir in "$panforest_dir"/*/; do
     
     # Simplify importance matrix
     echo "  Running simplify_imp.py for $run_id..."
-    python3 "$simplify_matrix_dir/simplify_imp.py" \
+    python3 "$panscript_dir/simplify_imp.py" \
         "$cutoff_value" \
         "$(realpath "$imp_file")" \
-        "${run_dir}/imp_simplified.csv"
+        "${run_dir}imp_cutoff/imp_simplified.csv"
     
     # Run inspect_imp.R
     echo "  Running inspect_imp.R for $run_id..."
     Rscript "$SCRIPT_DIR/inspect_imp.R" \
-        "$(realpath "${run_dir}/imp_fixed.csv")" \
-        "$(realpath "${run_dir}/imp_simplified.csv")" \
+        "$(realpath "$imp_file")" \
+        "$(realpath "${run_dir}imp_cutoff/imp_simplified.csv")" \
         "$(realpath "$nodes_file")" \
         "$cutoff_value" \
         "$dcutoff_value"
@@ -66,3 +66,4 @@ for run_dir in "$panforest_dir"/*/; do
     echo "  Finished $run_id"
     echo
 done
+
