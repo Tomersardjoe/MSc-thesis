@@ -27,7 +27,7 @@ out_dir <- file.path(dirname(nodes_path), "d_cutoff")
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
 # -------------------------
-# Read nodes.tsv (gene-level d-values)
+# Read nodes.tsv (gene-level D-values)
 # -------------------------
 nodes <- read.table(nodes_path, header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 nodes$Result <- as.numeric(nodes$Result)
@@ -61,25 +61,42 @@ pair_counts <- sapply(cutoffs, function(cut) {
 df_counts <- data.frame(cutoff = cutoffs, pairs = pair_counts)
 
 # -------------------------
-# Elbow detection on descending curve
+# Elbow detection on descending curve (ignoring the pre-steep region)
 # -------------------------
+# Step 1: compute slopes to find steepest descent
+slopes <- diff(df_counts$pairs) / diff(df_counts$cutoff)
+steep_idx <- which.min(slopes) + 1   # index of steepest drop
+
+# Step 2: build line from steepest point to last point
 all_points <- cbind(1:nrow(df_counts), df_counts$pairs)
-first_point <- all_points[1, ]
+first_point <- all_points[steep_idx, ]   # start after steep drop
 last_point  <- all_points[nrow(df_counts), ]
 line_vec <- last_point - first_point
 line_vec <- line_vec / sqrt(sum(line_vec^2))
+
+# Step 3: project all points onto that line
 vec_from_first <- sweep(all_points, 2, first_point)
 scalar_proj <- vec_from_first %*% line_vec
-proj_point <- scalar_proj %*% line_vec + matrix(rep(first_point, nrow(df_counts)), nrow = nrow(df_counts), byrow = TRUE)
+proj_point <- scalar_proj %*% line_vec + 
+              matrix(rep(first_point, nrow(df_counts)), nrow = nrow(df_counts), byrow = TRUE)
+
+# Step 4: compute distances, ignoring early section
 distances <- sqrt(rowSums((all_points - proj_point)^2))
+distances[1:steep_idx] <- NA   # ignore shallow section
+
+# Step 5: elbow = max distance in post-steep region
 elbow_idx <- which.max(distances)
 cutoff_value <- df_counts$cutoff[elbow_idx]
 
+# Save cutoff to file
 cutoff_file <- file.path(out_dir, paste0(unique_id, "_d_cutoff.txt"))
-write.table(cutoff_value, file = cutoff_file, row.names = FALSE, col.names = FALSE, quote = FALSE)
+write.table(cutoff_value, file = cutoff_file,
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+cat("Restricted distance-based cutoff written to:", cutoff_file, "\n")
 
 # -------------------------
-# Histogram of gene-level d-values
+# Histogram of gene-level D-values
 # -------------------------
 p_hist_genes <- ggplot(nodes, aes(x = Result)) +
   geom_histogram(binwidth = 0.25, boundary = cutoff_value, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
@@ -98,7 +115,7 @@ p_hist_genes <- ggplot(nodes, aes(x = Result)) +
   theme_minimal()
 
 # -------------------------
-# Histogram of pair-level d-values
+# Histogram of pair-level D-values
 # -------------------------
 
 # Pair-level D-value = minimum of the two genes' D-values
@@ -116,7 +133,7 @@ p_hist_pairs <- ggplot(pairs, aes(x = d_pair)) +
   ) +
   labs(
     title = paste("Distribution of gene pairs D-values —", unique_id),
-    x = "D-value (pair-level, min of source & target)",
+    x = "D-value (min of source & target)",
     y = "Pair count"
   ) +
   theme_minimal()
@@ -130,6 +147,39 @@ ggsave(output_path, plot = final_plot, width = 12, height = 6, dpi = 300, bg = "
 
 message("Plot saved as: ", output_path)
 message("Recommended Coinfinder cut-off (pairs curve elbow): ", cutoff_value)
+
+# -------------------------
+# Histogram: number of partners per gene above D-value cutoff
+# -------------------------
+
+# Keep only pairs where both genes meet the cutoff (i.e., d_pair >= cutoff_value)
+pairs_kept <- pairs %>%
+  filter(!is.na(d_pair), d_pair >= cutoff_value)
+
+# Build undirected partner list (count unique partners per gene)
+partners_long <- bind_rows(
+  pairs_kept %>% transmute(gene = Source, partner = Target),
+  pairs_kept %>% transmute(gene = Target, partner = Source)
+) %>%
+  filter(!is.na(gene), !is.na(partner), gene != partner)
+
+partners_per_gene <- partners_long %>%
+  distinct(gene, partner) %>%               # unique partners only
+  count(gene, name = "n_partners")          # degree per gene above cutoff
+
+p_partners <- ggplot(partners_per_gene, aes(x = n_partners)) +
+  geom_histogram(binwidth = 1, boundary = 0, closed = "right",
+                 fill = "#6baed6", color = "#08519c", alpha = 0.6) +
+  labs(
+    title = paste("Distribution of gene partners ≥ D-value cutoff —", unique_id),
+    subtitle = paste0("D-value cutoff = ", round(cutoff_value, 3)),
+    x = "Number of partners ≥ cutoff",
+    y = "Gene count"
+  ) +
+  theme_minimal()
+
+ggsave(file.path(out_dir, paste0("partners_hist_", unique_id, ".png")),
+       plot = p_partners, width = 8, height = 6, dpi = 300, bg = "white")
 
 # -------------------------
 # Pairs-retained curve with elbow cutoff

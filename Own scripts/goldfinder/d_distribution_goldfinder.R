@@ -107,7 +107,7 @@ p_hist_pairs <- ggplot(pairs, aes(x = d_pair)) +
   ) +
   labs(
     title = "Distribution of D-values - Significant gene pairs",
-    x = "D-value (pair-level, min of Gene_1 & Gene_2)",
+    x = "D-value (min of source & target)",
     y = "Pair count"
   ) +
   theme_minimal()
@@ -121,6 +121,36 @@ ggsave(file.path(out_dir, paste0("goldfinder_d_distributions_", unique_id, ".png
        plot = final_plot, width = 12, height = 6, dpi = 300, bg = "white")
 
 message("Goldfinder D-value distribution plots saved to: ", out_dir)
+
+# -------------------------
+# Histogram: number of partners per gene
+# -------------------------
+
+# Build undirected partner list (count unique partners per gene)
+partners_long <- bind_rows(
+  pairs %>% transmute(gene = Gene_1, partner = Gene_2),
+  pairs %>% transmute(gene = Gene_2, partner = Gene_1)
+) %>%
+  filter(!is.na(gene), !is.na(partner), gene != partner)
+
+partners_per_gene <- partners_long %>%
+  distinct(gene, partner) %>%   # unique partners only
+  count(gene, name = "n_partners")
+
+# Plot histogram of partner counts
+p_partners <- ggplot(partners_per_gene, aes(x = n_partners)) +
+  geom_histogram(binwidth = 1, boundary = 0, closed = "right",
+                 fill = "#6baed6", color = "#08519c", alpha = 0.6) +
+  labs(
+    title = paste("Distribution of gene partners -", unique_id),
+    x = "Number of partners",
+    y = "Gene count"
+  ) +
+  theme_minimal()
+
+# Save
+ggsave(file.path(out_dir, paste0("partners_hist_", unique_id, ".png")),
+       plot = p_partners, width = 8, height = 6, dpi = 300, bg = "white")
 
 # -------------------------
 # Write output data for comparative plots
