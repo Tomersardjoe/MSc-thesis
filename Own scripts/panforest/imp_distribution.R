@@ -51,22 +51,42 @@ scores         <- as.numeric(imp_mat_sym)
 scores         <- scores[!is.na(scores) & scores > 0]
 sorted_scores  <- sort(scores, decreasing = TRUE)
 
-n              <- length(sorted_scores)
-all_points     <- cbind(1:n, sorted_scores)
-first_point    <- matrix(all_points[1, ], nrow = 1)
-last_point     <- matrix(all_points[n, ], nrow = 1)
-line_vec       <- last_point - first_point
-line_vec       <- line_vec / sqrt(sum(line_vec^2))
+n <- length(sorted_scores)
+
+# -------------------------
+# Restricted distance-to-line elbow (ignore the pre-steep region)
+# -------------------------
+# Step 1: compute slopes
+slopes <- diff(sorted_scores)
+steep_idx <- which.min(slopes) + 1   # index of steepest drop
+
+# Step 2: build line from steepest point to last point
+all_points <- cbind(1:n, sorted_scores)
+first_point <- all_points[steep_idx, , drop = FALSE]
+last_point  <- all_points[n, , drop = FALSE]
+line_vec <- last_point - first_point
+line_vec <- line_vec / sqrt(sum(line_vec^2))
+
+# Step 3: project all points onto that line
 vec_from_first <- sweep(all_points, 2, first_point)
 scalar_proj    <- vec_from_first %*% t(line_vec)
-proj_point     <- scalar_proj %*% line_vec + matrix(rep(first_point, n), nrow = n, byrow = TRUE)
-distances      <- sqrt(rowSums((all_points - proj_point)^2))
-elbow_idx      <- which.max(distances)
-cutoff_value   <- sorted_scores[elbow_idx]
+proj_point     <- scalar_proj %*% line_vec + 
+                  matrix(rep(first_point, n), nrow = n, byrow = TRUE)
+
+# Step 4: compute distances, ignoring early section
+distances <- sqrt(rowSums((all_points - proj_point)^2))
+distances[1:steep_idx] <- NA   # ignore shallow section
+
+# Step 5: elbow = max distance in post-steep region
+elbow_idx    <- which.max(distances)
+cutoff_value <- sorted_scores[elbow_idx]
 
 # Save cutoff_value to a text file
 cutoff_file <- file.path(imp_dir, paste0(unique_id, "_cutoff_value.txt"))
 write(cutoff_value, file = cutoff_file)
+
+cat("Restricted distance-based cutoff written to:", cutoff_file, "\n")
+
 
 summary_stats <- data.frame(
   Stat  = c("Min", "Q1", "Median", "Mean", "Q3", "Max", "N", "ElbowCutoff"),

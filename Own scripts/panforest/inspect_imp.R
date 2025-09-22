@@ -16,7 +16,7 @@ select_top_generalists <- function(df, imp_mat, n = 5) {
   df$rank_total    <- rank(-df$total_importance, ties.method = "min")   # higher is better
   df$rank_mean     <- rank(-df$mean_importance, ties.method = "min")    # higher is better
   df$rank_gini     <- rank(df$gini, ties.method = "min")                # lower is better
-  df$rank_dval     <- rank(df$D_value, ties.method = "min")             # lower is better
+  df$rank_dval <- rank(-df$D_value, ties.method = "min")                # higher is better
   df$rank_nonzero  <- rank(-df$prop_nonzero, ties.method = "min")       # higher is better
   
   # Average rank including non-zero proportion
@@ -44,12 +44,13 @@ select_top_specialists <- function(df, imp_mat, n = 5) {
 }
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 4) {stop("Usage: Rscript inspect_imp.R /path/to/panforest/{run_id}/imp_fixed.csv /path/to/panforest/{run_id}_nodes.tsv /path/to/panforest/{run_id}_imp_cutoff.txt /path/to/coinfinder/{run_id}_d_cutoff.txt")} # NOT THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
+if (length(args) < 5) {stop("Usage: Rscript inspect_imp.R /path/to/panforest/{run_id}/imp_fixed.csv /path/to/panforest/{run_id}/imp_simplified.csv /path/to/panforest/{run_id}_nodes.tsv [importance score cutoff value] [D-value cutoff]")} # NOT THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
 
 imp_path       <- args[1]
-dval_path      <- args[2]
-cutoff_path    <- args[3]
-d_cutoff_path  <- args[4]
+imp_cut_path   <- args[2]
+dval_path      <- args[3]
+imp_cutoff     <- as.numeric(args[4])
+d_cutoff       <- as.numeric(args[5])
 imp_dir        <- dirname(imp_path)
 unique_id      <- basename(dirname(imp_path))
 
@@ -60,25 +61,9 @@ mode(imp_mat)  <- "numeric"
 row_sum  <- rowSums(imp_mat, na.rm = TRUE)   # total importance contributed by each gene
 row_mean <- rowMeans(imp_mat, na.rm = TRUE)  # average importance per target
 
-# Read in importance score cutoff value
-imp_cutoff <- as.numeric(read.table(cutoff_path)[[1]])
-
-# Create a thresholded copy: values below cutoff set to NA
-imp_mat_cut <- imp_mat
-imp_mat_cut[imp_mat_cut < imp_cutoff] <- NA
-
-keep_genes <- rownames(imp_mat_cut)[rowSums(!is.na(imp_mat_cut)) > 0]
-
-# Make sure they exist in both rows and columns
-keep_genes <- intersect(keep_genes, rownames(imp_mat_cut))
-keep_genes <- intersect(keep_genes, colnames(imp_mat_cut))
-
-if (length(keep_genes) == 0) {
-  warning("No genes survived cutoff")
-  imp_mat_cut <- imp_mat_cut[0, 0, drop = FALSE]
-} else {
-  imp_mat_cut <- imp_mat_cut[keep_genes, keep_genes, drop = FALSE]
-}
+imp_mat_cut       <- read.csv(imp_cut_path, row.names = 1, check.names = FALSE)
+imp_mat_cut       <- as.matrix(imp_mat_cut)
+mode(imp_mat_cut) <- "numeric"
 
 row_sum_cut  <- rowSums(imp_mat_cut, na.rm = TRUE)
 row_mean_cut <- rowMeans(imp_mat_cut, na.rm = TRUE)
@@ -103,9 +88,6 @@ if (!all(c("ID", "Result") %in% colnames(dvals))) {
 # Adjust column headers
 colnames(dvals)[colnames(dvals) == "ID"] <- "gene"
 colnames(dvals)[colnames(dvals) == "Result"] <- "D_value"
-
-# Read D-value cutoff
-d_cutoff <- as.numeric(read.table(d_cutoff_path)[[1]])
 
 row_summary <- data.frame(
   gene            = rownames(imp_mat),
@@ -254,9 +236,6 @@ p_unfiltered <- ggplot(row_summary, aes(x = mean_importance,
 ggsave(file.path(imp_dir, paste0(unique_id, "_mean_vs_gini.png")),
        plot = p_unfiltered, width = 8, height = 6, dpi = 300, bg = "white")
 
-# Count how many genes above cutoff
-n_survivors <- nrow(row_summary_cut)
-
 # Determine outline categories present in the data
 outline_levels <- c()
 if (nrow(top_generalists_cut) > 0) outline_levels <- c(outline_levels, "Broad contributor")
@@ -271,6 +250,8 @@ label_df_cut <- bind_rows(
   top_specialists_cut  %>% mutate(label_color = "blue",  outline_color = "blue"),
   outlier_cut %>% mutate(label_color = "black", outline_color = "red")
 )
+
+pct_retained <- (sum(imp_mat_cut) / sum(imp_mat)) * 100
 
 p_filtered <- ggplot(row_summary_cut, aes(x = mean_importance,
                                           y = gini,
@@ -298,8 +279,8 @@ p_filtered <- ggplot(row_summary_cut, aes(x = mean_importance,
                               ))) +
   labs(
     title = paste("Mean importance vs Gini with D-values for", unique_id),
-    subtitle = sprintf("Importance cutoff = %.3f | %.1f%% survived (n = %d of %d)",
-                       imp_cutoff, 100 * n_survivors / n_genes, n_survivors, n_genes),
+    subtitle = sprintf("Importance cutoff = %.3f | %.1f%% of total importance retained",
+                    imp_cutoff, pct_retained),
     x = "Mean importance per target",
     y = "Gini coefficient",
     size = "Total importance",

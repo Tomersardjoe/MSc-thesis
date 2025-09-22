@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 panforest_dir="$(realpath "real_pangenomes/panforest_runs")"
 coinfinder_dir="$(realpath "real_pangenomes/coinfinder_runs")"
+simplify_matrix_dir="$(realpath "panforest")"
 
 # Safety: bail if directories aren’t found
 for d in "$panforest_dir" "$coinfinder_dir"; do
@@ -42,13 +43,25 @@ for run_dir in "$panforest_dir"/*/; do
         continue
     fi
 
+    # Read cutoff values from files
+    cutoff_value=$(<"$cutoff_file")
+    dcutoff_value=$(<"$dcutoff_file")
+    
+    # Simplify importance matrix
+    echo "  Running simplify_imp.py for $run_id..."
+    python3 "$simplify_matrix_dir/simplify_imp.py" \
+        "$cutoff_value" \
+        "$(realpath "$imp_file")" \
+        "${run_dir}/imp_simplified.csv"
+    
     # Run inspect_imp.R
     echo "  Running inspect_imp.R for $run_id..."
     Rscript "$SCRIPT_DIR/inspect_imp.R" \
-        "$(realpath "$imp_file")" \
+        "$(realpath "${run_dir}/imp_fixed.csv")" \
+        "$(realpath "${run_dir}/imp_simplified.csv")" \
         "$(realpath "$nodes_file")" \
-        "$(realpath "$cutoff_file")" \
-        "$(realpath "$dcutoff_file")"
+        "$cutoff_value" \
+        "$dcutoff_value"
 
     echo "  Finished $run_id"
     echo
