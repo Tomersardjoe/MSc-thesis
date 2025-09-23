@@ -33,8 +33,7 @@ for run_dir in "$panforest_dir"/*/; do
 
     # Fix family group labels
     if [[ -f "$imp_csv" && ! -f "$imp_fixed" ]]; then
-        sed 's/^\([^,]*\)_family_group\(,\|$\)/\1\2/' "$imp_csv" > "$imp_fixed"
-        echo "  Fixed file created: $imp_fixed"
+        python3 "$SCRIPT_DIR/fix_imp_matrix.py" "$imp_csv" "$imp_fixed"
     elif [[ -f "$imp_fixed" ]]; then
         echo "  Skipping - $imp_fixed already exists."
     else
