@@ -51,22 +51,14 @@ pairs <- pairs %>%
 genes_in_pairs <- unique(c(pairs$Gene_1, pairs$Gene_2))
 nodes_in_pairs <- nodes %>% filter(ID %in% genes_in_pairs)
 
-#missing_genes <- setdiff(genes_in_pairs, nodes$ID)
-
-#closest_matches <- lapply(missing_genes, function(mg) {
-#  dists <- stringdist(mg, nodes$ID, method = "osa")
-#  best_idx <- which.min(dists)
-#  data.frame(
-#    missing_gene = mg,
-#    closest_match = nodes$ID[best_idx],
-#    distance = dists[best_idx]
-#  )
-#})
-
-#closest_matches_df <- do.call(rbind, closest_matches)
-#closest_matches_df
-
 bin_w <- 0.25
+
+# Define common breaks for both plots
+dval_breaks <- seq(
+  floor(min(c(nodes_in_pairs$Result, pairs$d_gene1, pairs$d_gene2), na.rm = TRUE)),
+  ceiling(max(c(nodes_in_pairs$Result, pairs$d_gene1, pairs$d_gene2), na.rm = TRUE)),
+  by = bin_w
+)
 
 p_hist_genes <- ggplot(nodes_in_pairs, aes(x = Result)) +
   geom_histogram(
@@ -75,11 +67,8 @@ p_hist_genes <- ggplot(nodes_in_pairs, aes(x = Result)) +
     fill = "#6baed6", color = "#08519c", alpha = 0.6
   ) +
   scale_x_continuous(
-    breaks = seq(
-      floor(min(nodes_in_pairs$Result, na.rm = TRUE)),
-      ceiling(max(nodes_in_pairs$Result, na.rm = TRUE)),
-      by = bin_w
-    )
+    breaks = dval_breaks,
+    labels = ifelse(dval_breaks %% 0.5 == 0, dval_breaks, "")
   ) +
   labs(
     title = paste("Distribution of D-values - Genes in significant pairs (", unique_id, ")", sep = ""),
@@ -99,11 +88,8 @@ p_hist_pairs <- ggplot(pairs, aes(x = d_pair)) +
     fill = "#fdae6b", color = "#e6550d", alpha = 0.6
   ) +
   scale_x_continuous(
-    breaks = seq(
-      floor(min(pairs$d_pair, na.rm = TRUE)),
-      ceiling(max(pairs$d_pair, na.rm = TRUE)),
-      by = bin_w
-    )
+    breaks = dval_breaks,
+    labels = ifelse(dval_breaks %% 0.5 == 0, dval_breaks, "")
   ) +
   labs(
     title = "Distribution of D-values - Significant gene pairs",

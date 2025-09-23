@@ -96,20 +96,33 @@ write.table(cutoff_value, file = cutoff_file,
 cat("Restricted distance-based cutoff written to:", cutoff_file, "\n")
 
 # -------------------------
+# Define breaks for both histograms
+# -------------------------
+dval_breaks <- seq(
+  floor(min(nodes$Result, na.rm = TRUE)),
+  ceiling(max(nodes$Result, na.rm = TRUE)),
+  by = 0.25
+)
+
+# -------------------------
 # Histogram of gene-level D-values
 # -------------------------
 p_hist_genes <- ggplot(nodes, aes(x = Result)) +
-  geom_histogram(binwidth = 0.25, boundary = cutoff_value, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
-  geom_vline(xintercept = cutoff_value, linetype = "dashed", color = "#e31a1c", linewidth = 1) +
+  geom_histogram(
+    binwidth = 0.25, boundary = cutoff_value,
+    fill = "#6baed6", color = "#08519c", alpha = 0.6
+  ) +
+  geom_vline(
+    xintercept = cutoff_value,
+    linetype = "dashed", color = "#e31a1c", linewidth = 1
+  ) +
   scale_x_continuous(
-    breaks = seq(
-      floor(min(nodes$Result, na.rm = TRUE)),
-      ceiling(max(nodes$Result, na.rm = TRUE)),
-      by = 0.25
-    )
+    breaks = dval_breaks,
+    labels = ifelse(dval_breaks %% 0.5 == 0, dval_breaks, "")
   ) +
   labs(
-    title = paste("Distribution of gene D-values —", unique_id),
+    title    = paste("Distribution of gene D-values —", unique_id),
+    subtitle = paste0("D-value cutoff = ", round(cutoff_value, 3)),
     x = "D-value", y = "Gene count"
   ) +
   theme_minimal()
@@ -122,17 +135,21 @@ p_hist_genes <- ggplot(nodes, aes(x = Result)) +
 pairs$d_pair <- pmin(pairs$d_source, pairs$d_target, na.rm = TRUE)
 
 p_hist_pairs <- ggplot(pairs, aes(x = d_pair)) +
-  geom_histogram(binwidth = 0.25, boundary = cutoff_value, fill = "#fdae6b", color = "#e6550d", alpha = 0.6) +
-  geom_vline(xintercept = cutoff_value, linetype = "dashed", color = "#e31a1c", linewidth = 1) +
+  geom_histogram(
+    binwidth = 0.25, boundary = cutoff_value,
+    fill = "#fdae6b", color = "#e6550d", alpha = 0.6
+  ) +
+  geom_vline(
+    xintercept = cutoff_value,
+    linetype = "dashed", color = "#e31a1c", linewidth = 1
+  ) +
   scale_x_continuous(
-    breaks = seq(
-      floor(min(nodes$Result, na.rm = TRUE)),
-      ceiling(max(nodes$Result, na.rm = TRUE)),
-      by = 0.25
-    )
+    breaks = dval_breaks,
+    labels = ifelse(dval_breaks %% 0.5 == 0, dval_breaks, "")
   ) +
   labs(
-    title = paste("Distribution of gene pairs D-values —", unique_id),
+    title    = paste("Distribution of gene pairs D-values —", unique_id),
+    subtitle = paste0("D-value cutoff = ", round(cutoff_value, 3)),
     x = "D-value (min of source & target)",
     y = "Pair count"
   ) +
@@ -146,6 +163,7 @@ output_path <- file.path(out_dir, paste0("d_distribution_", unique_id, ".png"))
 ggsave(output_path, plot = final_plot, width = 12, height = 6, dpi = 300, bg = "white")
 
 message("Plot saved as: ", output_path)
+
 message("Recommended Coinfinder cut-off (pairs curve elbow): ", cutoff_value)
 
 # -------------------------
