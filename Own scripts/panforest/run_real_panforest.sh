@@ -47,8 +47,8 @@ for gpa_file in "$gpa_dir"/*_REDUCED.csv; do
 
     # Step 2: Run PanForest
     python3 $pan_dir/PanForest.py \
-        -n 500 \
-        -d 8 \
+        -n 1000 \
+        -d 16 \
         -m "${outdir}/collapsed_matrix.csv" \
         -pres 1 \
         -abs 1 \

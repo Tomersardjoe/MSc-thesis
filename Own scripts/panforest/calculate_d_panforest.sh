@@ -29,18 +29,6 @@ for run_dir in "$panforest_dir"/*/; do
     mkdir -p "${run_dir}imp_cutoff"
 
     imp_csv="${run_dir}imp.csv"
-    imp_fixed="${run_dir}imp_cutoff/imp_fixed.csv"
-
-    # Fix family group labels
-    if [[ -f "$imp_csv" && ! -f "$imp_fixed" ]]; then
-        python3 "$SCRIPT_DIR/fix_imp_matrix.py" "$imp_csv" "$imp_fixed"
-    elif [[ -f "$imp_fixed" ]]; then
-        echo "  Skipping - $imp_fixed already exists."
-    else
-        echo "  No imp.csv found in $run_dir - skipping."
-        continue
-    fi
-
     cleaned_matrix="${run_dir}imp_cutoff/${run_id}_collapsed_matrix_clean.csv"
     nodes_tsv="${run_dir}imp_cutoff/${run_id}_nodes.tsv"
 

@@ -22,11 +22,12 @@ for run_dir in "$panforest_dir"/*/; do
     echo "Processing run: $run_id"
 
     imp_file="${run_dir}imp_cutoff/imp_fixed.csv"
+    perf_file="${run_dir}/performance.csv"
     dval_file="${run_dir}imp_cutoff/${run_id}_nodes.tsv"
 
-    # Check that both required files exist
+    # Check that all required files exist
     missing=false
-    for f in "$imp_file" "$dval_file"; do
+    for f in "$imp_file" "$perf_file" "$dval_file"; do
         if [ ! -f "$f" ]; then
             echo "  Skipping $run_id - missing file: $f"
             echo
@@ -42,7 +43,7 @@ for run_dir in "$panforest_dir"/*/; do
     if [ -f "$dcutoff_file" ]; then
         dcutoff_value=$(<"$dcutoff_file")
     else
-        echo "  No dcutoff file for $run_id, running R script without it"
+        echo "  No D-value cutoff found for $run_id, will be calculated in R script"
         dcutoff_value="NA"
     fi
 
@@ -50,6 +51,7 @@ for run_dir in "$panforest_dir"/*/; do
     echo "  Running imp_distribution.R for $run_id..."
     Rscript "$SCRIPT_DIR/imp_distribution.R" \
         "$(realpath "$imp_file")" \
+        "$(realpath "$perf_file")" \
         "$(realpath "$dval_file")" \
         "$dcutoff_value"
 
