@@ -145,14 +145,21 @@ def update_performance(table, i, y_sets):
 
 def flatten_index_like(obj):
     def clean_entry(entry):
-        # If it's a string, extract just the first item
+        # If it's a tuple, prefer the first non-empty element
+        if isinstance(entry, tuple):
+            for part in entry:
+                if pd.notna(part) and str(part) != "":
+                    return str(part)
+            return "_".join(str(i) for i in entry if pd.notna(i))
+
+        # If it's a string, extract a compact token (letters, digits, _ or -)
         if isinstance(entry, str):
-            match = re.match(r"\(?[\"']?(\w+)[\"']?,?", entry)
+            match = re.search(r"([A-Za-z0-9\-_]+)", entry)
             if match:
                 return match.group(1)
-        # If it's a tuple, drop NaNs and join
-        if isinstance(entry, tuple):
-            return "_".join(str(i) for i in entry if pd.notna(i))
+            return entry
+
+        # Fallback
         return str(entry)
 
     return [clean_entry(e) for e in obj]
