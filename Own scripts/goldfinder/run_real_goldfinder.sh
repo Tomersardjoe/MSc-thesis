@@ -6,10 +6,31 @@ if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
     exit 1
 fi
 
+# Parse arguments
+dataset=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dataset)
+      dataset="$2"
+      shift 2
+      ;;
+    *)
+      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes>"
+      exit 1
+      ;;
+  esac
+done
+
+# Require dataset flag
+if [ -z "$dataset" ]; then
+    echo "Error: You must provide --dataset <real_pangenomes|simulated_pangenomes>"
+    exit 1
+fi
+
 tree_dir="real_pangenomes/tree_matches"
-gpa_dir="real_pangenomes/gpa_matches"
+gpa_dir="${dataset}/gpa_matches"
 gold_dir="goldfinder/goldfinder"
-out_base="real_pangenomes/goldfinder_runs"
+out_base="${dataset}/goldfinder_runs"
 
 # Safety: bail if directories aren’t found
 for d in "$tree_dir" "$gpa_dir"; do
@@ -24,18 +45,14 @@ mkdir -p "$out_base"
 # Loop through each tree file in the tree_matches directory
 for tree_file in "$tree_dir"/*.nwk; do
     
-    # Extract species_taxid from filename
-    filename=$(basename "$tree_file")
-    
-    # Remove extension
-    basename_noext="${filename%.nwk}"
-    species_taxid="${basename_noext##*_}"
+    filename=$(basename "$gpa_file")
+    basename_noext="${filename%.*}"
+    base="${basename_noext%_REDUCED}"
+    species_taxid="${base##*_}"
 
-    # Build path to corresponding GPA file
-    gpa_file="${gpa_dir}/${species_taxid}_REDUCED.csv"
+    gpa_file=$(ls "${gpa_dir}"/*"${species_taxid}"_REDUCED.tab 2>/dev/null | head -n1)
     [ -f "$gpa_file" ] && echo "Found!" || echo "Missing!"
 
-    # Skip if GPA file doesn't exist
     if [ ! -f "$gpa_file" ]; then
         echo "Warning: No GPA file for ${species_taxid}, skipping."
         continue
@@ -43,22 +60,18 @@ for tree_file in "$tree_dir"/*.nwk; do
 
     echo "Starting ${species_taxid}..."
 
-    # Output directory for this species
     outdir="${out_base}/${species_taxid}"
     if [ -d "$outdir" ] && [ "$(ls -A "$outdir")" ]; then
         echo "Skipping ${species_taxid}: $outdir already exists and is not empty."
         continue
     fi
 
-    # Use absolute file paths
     gpa_file="$(realpath "$gpa_file")"
     tree_file="$(realpath "$tree_file")"
-    
     mkdir -p "$outdir"
 
-    # Run Goldfinder
     (
-      NUMBA_NUM_THREADS=24 python3 $gold_dir/goldfinder.py \
+      NUMBA_NUM_THREADS=24 python3 "$gold_dir/goldfinder.py" \
         -i "$gpa_file" \
         -t "$tree_file" \
         -o "$outdir" \

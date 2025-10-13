@@ -7,12 +7,34 @@ if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-panforest_dir="$(realpath "real_pangenomes/panforest_runs")"
-coinfinder_dir="$(realpath "real_pangenomes/coinfinder_runs")"
+
+# Parse arguments
+dataset=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dataset)
+      dataset="$2"
+      shift 2
+      ;;
+    *)
+      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes>"
+      exit 1
+      ;;
+  esac
+done
+
+# Require dataset flag
+if [ -z "$dataset" ]; then
+    echo "Error: You must provide --dataset <real_pangenomes|simulated_pangenomes>"
+    exit 1
+fi
+
+panforest_dir="$(realpath "${dataset}/panforest_runs")"
+coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
 
 # Safety: bail if directory isn’t found
 if [ ! -d "$panforest_dir" ]; then
-    echo "Error: Directory '$panforest_root' not found. Check the path."
+    echo "Error: Directory '$panforest_dir' not found. Check the path."
     exit 1
 fi
 
@@ -21,7 +43,7 @@ for run_dir in "$panforest_dir"/*/; do
     run_id=$(basename "$run_dir")
     echo "Processing run: $run_id"
 
-    imp_file="${run_dir}imp_cutoff/imp_fixed.csv"
+    imp_file="${run_dir}/imp.csv"
     perf_file="${run_dir}/performance.csv"
     dval_file="${run_dir}imp_cutoff/${run_id}_nodes.tsv"
 

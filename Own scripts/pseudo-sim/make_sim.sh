@@ -12,14 +12,12 @@ script="scripts/pseudo-sim/sim_pan.py"
 out_base="simulated_pangenomes"
 
 # Safety checks
-if [ ! -d "$nodes_dir" ]; then
-    echo "Error: Directory '$nodes_dir' not found."
-    exit 1
-fi
-if [ ! -d "$gpa_dir" ]; then
-    echo "Error: Directory '$gpa_dir' not found."
-    exit 1
-fi
+for d in "$nodes_dir" "$gpa_dir"; do
+    if [ ! -d "$d" ]; then
+        echo "Error: Directory '$d' not found."
+        exit 1
+    fi
+done
 
 mkdir -p "$out_base"
 
@@ -38,20 +36,20 @@ for nodes_file in "$nodes_dir"/*/coincident_nodes_all.tsv; do
     echo "Starting ${species_taxid}..."
 
     # Output directory
-    outdir="${out_base}/${species_taxid}"
-    if [ -d "$outdir" ] && [ "$(ls -A "$outdir")" ]; then
-        echo "Skipping ${species_taxid}: $outdir already exists and is not empty."
-        continue
-    fi
-    mkdir -p "$outdir"
+    outdir="${out_base}"
+    mkdir -p "$outdir/gpa_matches"
 
     # Absolute paths
     nodes_file="$(realpath "$nodes_file")"
     gpa_file="$(realpath "$gpa_file")"
     outdir="$(realpath "$outdir")"
 
-    # Run your simulation script
-    python3 "$script" "$nodes_file" "$gpa_file" -o "${outdir}/${species_taxid}_duplicates.csv"
+    # Run simulation script
+    python3 "$script" \
+        "$nodes_file" \
+        "$gpa_file" \
+        -o "${outdir}/gpa_matches/duplicates_${species_taxid}_REDUCED.csv" \
+        --tab_out "${outdir}/gpa_matches/duplicates_${species_taxid}_REDUCED.tab"
 
     echo "Finished ${species_taxid}"
 done

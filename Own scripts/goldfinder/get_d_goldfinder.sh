@@ -9,9 +9,29 @@ fi
 # Get the directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-base_dir="real_pangenomes"
-goldfinder_dir="$(realpath "$base_dir/goldfinder_runs")"
-coinfinder_dir="$(realpath "$base_dir/coinfinder_runs")"
+# Parse arguments
+dataset=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dataset)
+      dataset="$2"
+      shift 2
+      ;;
+    *)
+      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes>"
+      exit 1
+      ;;
+  esac
+done
+
+# Require dataset flag
+if [ -z "$dataset" ]; then
+    echo "Error: You must provide --dataset <real_pangenomes|simulated_pangenomes>"
+    exit 1
+fi
+
+goldfinder_dir="$(realpath "${dataset}/goldfinder_runs")"
+coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
 
 # Safety: bail if directory isn’t found
 for dir in "$goldfinder_dir" "$coinfinder_dir"; do

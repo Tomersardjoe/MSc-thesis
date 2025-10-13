@@ -298,7 +298,7 @@ p_cdf <- ggplot(df_cdf, aes(x = score, y = cum_prop)) +
     aes(
       x     = Value,
       y     = y,
-      label = paste0("Elbow\n", format(Value, scientific = TRUE, digits = 3)),
+      label = paste0("Importance score cutoff\n", format(Value, scientific = TRUE, digits = 3)),
       fill  = I("white"),
       color = Stat
     ),
@@ -314,7 +314,7 @@ p_cdf <- ggplot(df_cdf, aes(x = score, y = cum_prop)) +
   scale_linetype_manual(values = stat_linetypes) +
   labs(
     title    = "Cumulative distribution of symmetric gene-gene \nimportance scores",
-    subtitle = paste0("Elbow calculated at ", round(imp_cutoff, 3)),
+    subtitle = paste0("Cutoff score cutoff ", round(imp_cutoff, 3)),
     x        = "Importance Score",
     y        = "Cumulative Proportion"
   ) +

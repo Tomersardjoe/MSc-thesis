@@ -9,12 +9,33 @@ fi
 # Get the directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-coinfinder_dir="$(realpath "real_pangenomes/coinfinder_runs")"
+# Parse arguments
+dataset=""
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dataset)
+      dataset="$2"
+      shift 2
+      ;;
+    *)
+      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes>"
+      exit 1
+      ;;
+  esac
+done
+
+# Require dataset flag
+if [ -z "$dataset" ]; then
+    echo "Error: You must provide --dataset <real_pangenomes|simulated_pangenomes>"
+    exit 1
+fi
+
+coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
 tree_dir="$(realpath "real_pangenomes/tree_matches")"
-pa_dir="$(realpath "real_pangenomes/gpa_matches")"
+gpa_dir="$(realpath "${dataset}/gpa_matches")"
 
 # Safety: bail if directories aren’t found
-for d in "$coinfinder_dir" "$tree_dir" "$pa_dir"; do
+for d in "$coinfinder_dir" "$tree_dir" "$gpa_dir"; do
     if [ ! -d "$d" ]; then
         echo "Error: Directory '$d' not found. Check the path."
         exit 1
@@ -26,10 +47,10 @@ for run_dir in "$coinfinder_dir"/*/; do
     run_id=$(basename "$run_dir")
     echo "Processing run: $run_id"
 
-    nodes_file="${run_dir}coincident_nodes.tsv"
+    nodes_file="${run_dir}coincident_nodes_all.tsv"
     pairs_file="${run_dir}coincident_pairs.tsv"
     tree_file="${tree_dir}/reduced_${run_id}.nwk"
-    pa_file="${pa_dir}/${run_id}_REDUCED.csv"
+    gpa_file="${gpa_dir}/${run_id}_REDUCED.csv"
 
     # Check that all required files exist
     missing=false
@@ -49,7 +70,7 @@ for run_dir in "$coinfinder_dir"/*/; do
         "$(realpath "$nodes_file")" \
         "$(realpath "$pairs_file")" \
         "$(realpath "$tree_file")" \
-        "$(realpath "$pa_file")"
+        "$(realpath "$gpa_file")"
 
     echo "  Finished $run_id"
     echo

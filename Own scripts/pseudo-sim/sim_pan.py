@@ -1,22 +1,48 @@
+#!/usr/bin/env python3
 import argparse
 import pandas as pd
 import numpy as np
 import random
+import csv
 
+def convert_gpa_to_tab(gpa_csv, output_tab):
+    """
+    Convert a presence/absence CSV matrix into Coinfinder's 2-column .tab format:
+        Gene    Genome
+    Only presence calls (non-zero) are written.
+    """
+    with open(gpa_csv, newline='') as inf, open(output_tab, 'w', newline='') as outf:
+        reader = csv.reader(inf)  # defaults to comma delimiter
+        header = next(reader)
+        
+        for row in reader:
+            gene = row[0]
+            for i in range(1, len(row)):
+                try:
+                    if int(row[i]):  # 1 means present
+                        outf.write(f"{gene}\t{header[i]}\n")
+                except ValueError:
+                    # Ignore non-integer cells if any
+                    continue
 def main():
     parser = argparse.ArgumentParser(
-        description="Insert shuffled duplicates into random positions without changing original gene order"
+        description="Insert shuffled duplicates into GPA and graft them into a tree"
     )
     parser.add_argument("nodes_tsv", help="Path to nodes_all.tsv file")
     parser.add_argument("gpa_csv", help="Path to gene_presence_absence.csv file")
+    parser.add_argument("--tree_in", help="Input Newick tree file")
+    parser.add_argument("--tree_out", help="Output Newick tree with duplicates")
     parser.add_argument(
         "-o", "--output", default="gpa_with_duplicates.csv",
         help="Output CSV file (default: gpa_with_duplicates.csv)"
     )
+    parser.add_argument(
+        "--tab_out", help="Optional Coinfinder .tab output file"
+    )
     args = parser.parse_args()
 
     # Load nodes_all.tsv
-    nodes_df = pd.read_csv(args.nodes_tsv, sep="\t", encoding="utf-8")
+    nodes_df = pd.read_csv(args.nodes_tsv, sep="\t")
     d_values = nodes_df["Result"]
 
     # Compute 5th and 95th percentiles
@@ -68,12 +94,22 @@ def main():
 
     # Build final dataframe
     combined_df = pd.DataFrame(result_rows).set_index("index")
-    combined_df.to_csv(args.output)
+    
+    # Ensure values are integers (0/1)
+    combined_df = combined_df.fillna(0).astype(int)
+    
+    # Write CSV: blank top-left cell, comma-separated
+    combined_df.to_csv(args.output, index=True, index_label="", sep=",", encoding="utf-8")
 
     print(f"Original genes: {len(gpa_df)}")
     print(f"Duplicated genes inserted: {len(matches)}")
     print(f"Final rows: {combined_df.shape[0]}")
     print(f"Saved updated gpa to: {args.output}")
+
+    # Create .tab if requested
+    if args.tab_out:
+        convert_gpa_to_tab(args.output, args.tab_out)
+        print(f"Saved Coinfinder .tab file to: {args.tab_out}")
 
 if __name__ == "__main__":
     main()
