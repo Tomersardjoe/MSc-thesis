@@ -45,12 +45,11 @@ mkdir -p "$out_base"
 # Loop through each tree file in the tree_matches directory
 for tree_file in "$tree_dir"/*.nwk; do
     
-    filename=$(basename "$gpa_file")
-    basename_noext="${filename%.*}"
-    base="${basename_noext%_REDUCED}"
-    species_taxid="${base##*_}"
+    filename=$(basename "$tree_file")
+    basename_noext="${filename%.nwk}"
+    species_taxid="${basename_noext#reduced_}"
 
-    gpa_file=$(ls "${gpa_dir}"/*"${species_taxid}"_REDUCED.tab 2>/dev/null | head -n1)
+    gpa_file=$(ls "${gpa_dir}"/*"${species_taxid}"_REDUCED.csv 2>/dev/null | head -n1)
     [ -f "$gpa_file" ] && echo "Found!" || echo "Missing!"
 
     if [ ! -f "$gpa_file" ]; then
