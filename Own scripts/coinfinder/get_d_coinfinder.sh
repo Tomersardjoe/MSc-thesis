@@ -31,11 +31,10 @@ if [ -z "$dataset" ]; then
 fi
 
 coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
-tree_dir="$(realpath "real_pangenomes/tree_matches")"
 gpa_dir="$(realpath "${dataset}/gpa_matches")"
 
 # Safety: bail if directories aren’t found
-for d in "$coinfinder_dir" "$tree_dir" "$gpa_dir"; do
+for d in "$coinfinder_dir" "$gpa_dir"; do
     if [ ! -d "$d" ]; then
         echo "Error: Directory '$d' not found. Check the path."
         exit 1
@@ -49,12 +48,12 @@ for run_dir in "$coinfinder_dir"/*/; do
 
     nodes_file="${run_dir}coincident_nodes_all.tsv"
     pairs_file="${run_dir}coincident_pairs.tsv"
-    tree_file="${tree_dir}/reduced_${run_id}.nwk"
-    gpa_file="${gpa_dir}/${run_id}_REDUCED.csv"
+    tree_file="${run_dir}/${run_id}_fixed.nwk"
+    gpa_file=$(ls "${gpa_dir}"/*"${species_taxid}"_REDUCED.csv 2>/dev/null | head -n1)
 
     # Check that all required files exist
     missing=false
-    for f in "$nodes_file" "$pairs_file" "$tree_file" "$pa_file"; do
+    for f in "$nodes_file" "$pairs_file" "$tree_file" "$gpa_file"; do
         if [ ! -f "$f" ]; then
             echo "  Skipping $run_id - missing file: $f"
             missing=true
