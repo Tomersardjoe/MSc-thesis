@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-required_env="coinfinder"
+required_env="coinfinder_new"
 if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
     echo "Please activate the '$required_env' environment before running this script."
     exit 1

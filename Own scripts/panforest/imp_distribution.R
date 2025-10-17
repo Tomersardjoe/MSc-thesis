@@ -90,16 +90,15 @@ elbow_cutoff <- function(x, na_ok = FALSE) {
 
 # Read input arguments
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 4) {stop("Usage: Rscript imp_distribution.R /path/to/panforest/{run_id}/imp_cutoff/imp_fixed.csv /path/to/panforest/{run_id}/performance.csv /path/to/panforest/imp_cutoff/{run_id}_nodes.tsv [D-value cutoff]")} # DO NOT USE THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
+if (length(args) < 4) {stop("Usage: Rscript imp_distribution.R /path/to/panforest/{run_id}/imp_.csv /path/to/panforest/{run_id}/performance.csv /path/to/panforest/imp_cutoff/{run_id}_nodes.tsv [D-value cutoff]")} # DO NOT USE THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
 
 imp_path      <- args[1]
 perf_path     <- args[2]
 dval_path     <- args[3]
 dcutoff_value <- suppressWarnings(as.numeric(args[4]))
 
-imp_dir   <- dirname(imp_path)
-out_dir   <- imp_dir
-unique_id <- basename(dirname(imp_dir))
+out_dir   <- dirname(dval_path)
+unique_id <- basename(dirname(out_dir))
 
 # Parameter defaults
 imp_cutoff_default <- 0.01
@@ -487,7 +486,7 @@ p_curve <- ggplot(pair_curve, aes(x = cutoff, y = pairs)) +
     values = c("Coinfinder" = "#450808", "Elbow" = "#e31a1c"),
     breaks = c("Coinfinder", "Elbow"),
     labels = c(
-      paste0("Coinfinder (", signif(dcutoff_value, 3), ")"),
+      paste0("Q3 method (", signif(dcutoff_value, 3), ")"),
       paste0("Elbow method (", signif(elbow_dcutoff, 3), ")")
     ),
     drop = TRUE   # <- important: drop unused levels
@@ -496,7 +495,7 @@ p_curve <- ggplot(pair_curve, aes(x = cutoff, y = pairs)) +
     values = c("Coinfinder" = "dotted", "Elbow" = "dashed"),
     breaks = c("Coinfinder", "Elbow"),
     labels = c(
-      paste0("Coinfinder (", signif(dcutoff_value, 3), ")"),
+      paste0("Q3 method (", signif(dcutoff_value, 3), ")"),
       paste0("Elbow method (", signif(elbow_dcutoff, 3), ")")
     ),
     drop = TRUE
