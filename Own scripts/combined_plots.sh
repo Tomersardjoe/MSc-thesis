@@ -8,20 +8,24 @@ fi
 
 # Parse arguments
 dataset=""
+mode="unfiltered"
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
       dataset="$2"
       shift 2
       ;;
+    --mode)
+      mode="$2"
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes>"
+      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes> [--mode <unfiltered|filtered>]"
       exit 1
       ;;
   esac
 done
 
-# Require dataset flag
 if [ -z "$dataset" ]; then
     echo "Error: You must provide --dataset <real_pangenomes|simulated_pangenomes>"
     exit 1
@@ -32,7 +36,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
 goldfinder_dir="$(realpath "${dataset}/goldfinder_runs")"
-panforest_dir="$(realpath "${dataset}/panforest_runs")"
+panforest_dir="$(realpath "${dataset}/panforest_runs/${mode}")"
 
 # Safety: bail if directories aren’t found
 for d in "$coinfinder_dir" "$goldfinder_dir" "$panforest_dir"; do
@@ -45,7 +49,7 @@ done
 # Loop through each run_id in coinfinder_runs
 for run_dir in "$coinfinder_dir"/*/; do
     run_id=$(basename "$run_dir")
-    echo "Processing run: $run_id"
+    echo "Processing run: $run_id (${mode})"
 
     coin_file="${coinfinder_dir}/${run_id}/d_cutoff/coinfinder_dvalues_${run_id}.csv"
     gold_file="${goldfinder_dir}/${run_id}/d_distribution/goldfinder_dvalues_${run_id}.csv"
@@ -70,8 +74,8 @@ for run_dir in "$coinfinder_dir"/*/; do
         "$(realpath "$coin_file")" \
         "$(realpath "$gold_file")" \
         "$(realpath "$pan_file")" \
-        "$(realpath "$d_cutoff_file")" \
+        "$(realpath "$d_cutoff_file")"
 
-    echo "  Finished $run_id"
+    echo "  Finished $run_id (${mode})"
     echo
 done
