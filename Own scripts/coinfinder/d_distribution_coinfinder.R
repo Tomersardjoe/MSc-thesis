@@ -56,7 +56,7 @@ summary_stats <- data.frame(
 )
 
 # calculate percentage of genes above cutoff
-total_genes   <- sum(!is.na(nodes$Result))
+total_genes    <- sum(!is.na(nodes$Result))
 retained_genes <- sum(nodes$Result >= cutoff_value, na.rm = TRUE)
 pct_retained   <- 100 * retained_genes / total_genes
 
@@ -66,7 +66,7 @@ pct_retained   <- 100 * retained_genes / total_genes
 stat_colors    <- c("Q1" = "#1f78b4", "Median" = "#33a02c", "Q3/cutoff" = "#e31a1c")
 stat_linetypes <- c("Q1" = "dashed",   "Median" = "solid",   "Q3/cutoff" = "dotdash")
 
-# Compute histogram bins the same way ggplot will
+# Compute histogram bins
 binwidth <- 0.25
 bins <- ggplot_build(
   ggplot(nodes, aes(x = Result)) +
@@ -131,7 +131,7 @@ p_d_cutoff <- ggplot(nodes, aes(x = Result)) +
   scale_color_manual(values = stat_colors) +
   scale_linetype_manual(values = stat_linetypes) +
   labs(
-    title    = paste("Distribution of gene D-values —", unique_id),
+    title    = paste("Distribution of gene D-values -", unique_id),
     subtitle = paste0("D-value cutoff = ", round(cutoff_value, 3),
       " | Genes retained = ", retained_genes, "/", total_genes,
       " (", round(pct_retained, 1), "%)"
@@ -183,10 +183,10 @@ p_hist_genes <- ggplot(nodes, aes(x = Result)) +
            xmin = cutoff_value, xmax = Inf, ymin = 0, ymax = Inf,
            alpha = 0.1, fill = "#e31a1c") +
   scale_x_continuous(
-    breaks = seq(-5, 5, by = 0.5)
+    breaks = seq(-5, 5, by = 1.0)
   ) +
   labs(
-    title    = paste("Distribution of gene D-values —", unique_id),
+    title    = paste("Distribution of gene D-values -", unique_id),
     subtitle = paste0("D-value cutoff = ", round(cutoff_value, 3),
       " | Genes retained = ", retained_genes, "/", total_genes,
       " (", round(pct_retained, 1), "%)"
@@ -247,10 +247,10 @@ p_hist_pairs <- ggplot(pairs, aes(x = d_pair)) +
            xmin = cutoff_value, xmax = Inf, ymin = 0, ymax = Inf,
            alpha = 0.1, fill = "#e31a1c") +
   scale_x_continuous(
-    breaks = seq(-5, 5, by = 0.5)
+    breaks = seq(-5, 5, by = 1.0)
   ) +
   labs(
-    title    = paste("Distribution of gene pairs D-values —", unique_id),
+    title    = paste("Distribution of gene pairs D-values -", unique_id),
     subtitle = paste0("D-value cutoff = ", round(cutoff_value, 3),
       " | Gene pairs retained = ", retained_pairs, "/", total_pairs,
       " (", round(pct_retained, 1), "%)"
@@ -316,12 +316,12 @@ p_partners <- ggplot(partners_per_gene, aes(x = n_partners)) +
   geom_histogram(binwidth = 1, boundary = 0, closed = "right",
                  fill = "#6baed6", color = "#08519c", alpha = 0.6) +
   labs(
-    title = paste("Distribution of gene partners ≥ D-value cutoff —", unique_id),
+    title = paste("Distribution of gene partners >= D-value cutoff -", unique_id),
     subtitle = paste0(
       "D-value cutoff = ", round(cutoff_value, 3),
       " | Mean gene partners = ", round(mean_partners, 2)
     ),
-    x = "Number of partners ≥ cutoff",
+    x = "Number of partners >= cutoff",
     y = "Gene count"
   ) +
   theme_minimal()

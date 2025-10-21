@@ -8,7 +8,95 @@ suppressPackageStartupMessages({
   library(readr)
 })
 
-# Helper functions
+# -------------------------
+# Helpers
+# -------------------------
+
+annotate_outliers <- function(plot, n_low, n_high, label_prefix = "genes") {
+  if (n_low > 0) {
+    plot <- plot + annotate("text", x = -Inf, y = Inf,
+                            label = paste0(n_low, " ", label_prefix, " < D: -5"),
+                            hjust = -0.1, vjust = 2, color = "blue")
+  }
+  if (n_high > 0) {
+    plot <- plot + annotate("text", x = -Inf, y = Inf,
+                            label = paste0(n_high, " ", label_prefix, " > D: 5"),
+                            hjust = -0.1, vjust = 3.5, color = "red")
+  }
+  plot
+}
+
+make_subtitle <- function(stage, entity, counts, totals, cutoffs) {
+  retained <- counts[[stage]][[entity]]
+  total    <- totals[[stage]][[entity]]
+  pct      <- if (!is.na(total) && total > 0) round(100 * retained / total, 1) else NA
+  cutoff   <- cutoffs[[stage]]
+
+  cutoff_val <- cutoff$value
+  if (is.numeric(cutoff_val) && length(cutoff_val) == 1) {
+    cutoff_val <- round(cutoff_val, 2)
+  } else if (is.numeric(cutoff_val) && length(cutoff_val) == 2) {
+    cutoff_val <- paste(round(cutoff_val, 2), collapse = "/")
+  }
+
+  paste0(
+    cutoff$label, " cutoff = ", cutoff_val,
+    " | ", toupper(substr(entity,1,1)), substr(entity,2,nchar(entity)),
+    " retained = ", retained, "/", total,
+    if (!is.na(pct)) paste0(" (", pct, "%)") else ""
+  )
+}
+
+make_hist <- function(df, subtitle, title, label_prefix, cutoff_df, dcutoff_value) {
+  n_low  <- sum(df$D_value < -5, na.rm = TRUE)
+  n_high <- sum(df$D_value >  5, na.rm = TRUE)
+
+  fill_col  <- ifelse(label_prefix == "genes", "#6baed6", "#fdae6b")
+  border_col <- ifelse(label_prefix == "genes", "#08519c", "#e6550d")
+
+  p <- ggplot(df, aes(x = D_value)) +
+    geom_histogram(binwidth = 0.25, boundary = dcutoff_value,
+                   fill = fill_col, color = border_col, alpha = 0.6) +
+    geom_vline(data = cutoff_df,
+               aes(xintercept = cutoff, color = Stat, linetype = Stat),
+               linewidth = 1) +
+    scale_color_manual(
+      values = c("Elbow"="#e31a1c","Q3"="#450808"),
+      labels = c(
+        paste0("Elbow (", round(elbow_dcutoff, 2), ")"),
+        paste0("Q3 (", round(dcutoff_value, 2), ")")
+      )
+    ) +
+    scale_linetype_manual(
+      values = c("Elbow"="dashed","Q3"="dotted"),
+      labels = c(
+        paste0("Elbow (", round(elbow_dcutoff, 2), ")"),
+        paste0("Q3 (", round(dcutoff_value, 2), ")")
+      )
+    ) +
+    scale_x_continuous(breaks = seq(-5,5,1)) +
+    labs(title = title, subtitle = subtitle,
+         x = "D-value", y = paste0(toupper(substr(label_prefix,1,1)),
+                                   substr(label_prefix,2,nchar(label_prefix)),
+                                   " count"),
+         color = "Cutoff type", linetype = "Cutoff type") +
+    coord_cartesian(xlim = c(-5,5)) +
+    theme_minimal()
+
+  annotate_outliers(p, n_low, n_high, label_prefix)
+}
+
+make_symmetric_mean <- function(mat) {
+  mat <- as.matrix(mat)
+  rn <- rownames(mat)
+  diag(mat) <- NA
+  sym_mat <- (mat + t(mat)) / 2
+  na_idx  <- is.na(sym_mat)
+  sym_mat[na_idx] <- mat[na_idx] + t(mat)[na_idx]
+  rownames(sym_mat) <- rn
+  colnames(sym_mat) <- rn
+  sym_mat
+}
 
 safe_approx <- function(x, y, xout) {
   keep <- !is.na(x) & !is.na(y)
@@ -24,18 +112,6 @@ safe_approx <- function(x, y, xout) {
     xout  <- xout + (idx - 1) * 1e-9
   }
   approx(x, y, xout = xout, rule = 2)$y
-}
-
-make_symmetric_mean <- function(mat) {
-  mat <- as.matrix(mat)
-  rn <- rownames(mat)
-  diag(mat) <- NA
-  sym_mat <- (mat + t(mat)) / 2
-  na_idx  <- is.na(sym_mat)
-  sym_mat[na_idx] <- mat[na_idx] + t(mat)[na_idx]
-  rownames(sym_mat) <- rn
-  colnames(sym_mat) <- rn
-  sym_mat
 }
 
 # Elbow finder accepts numeric vector or a data.frame with columns cutoff and pairs
@@ -88,9 +164,17 @@ elbow_cutoff <- function(x, na_ok = FALSE) {
   return(imp_cutoff)
 }
 
+# -------------------------
+# Load data and compute cutoffs
+# -------------------------
+
 # Read input arguments
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 4) {stop("Usage: Rscript imp_distribution.R /path/to/panforest/{run_id}/imp_.csv /path/to/panforest/{run_id}/performance.csv /path/to/panforest/imp_cutoff/{run_id}_nodes.tsv [D-value cutoff]")} # DO NOT USE THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
+if (length(args) < 4) {stop("Usage: Rscript imp_distribution.R
+    /path/to/panforest/{run_id}/imp_.csv 
+    /path/to/panforest/{run_id}/performance.csv
+    /path/to/panforest/imp_cutoff/{run_id}_nodes.tsv # DO NOT USE THE COINFINDER nodes_all.tsv but the output of PanForest's calculate_d.R
+    [D-value cutoff]")}
 
 imp_path      <- args[1]
 perf_path     <- args[2]
@@ -100,8 +184,7 @@ dcutoff_value <- suppressWarnings(as.numeric(args[4]))
 out_dir   <- dirname(dval_path)
 unique_id <- basename(dirname(out_dir))
 
-# Parameter defaults
-imp_cutoff_default <- 0.01
+imp_cutoff         <- 0.01
 accuracy_cutoff    <- 0.9
 f1_cutoff          <- 0.9
 
@@ -110,77 +193,176 @@ imp         <- read.csv(imp_path, row.names = 1, check.names = FALSE)
 imp_sym_raw <- make_symmetric_mean(as.matrix(imp))
 gene_names  <- rownames(imp_sym_raw)
 
-# Read D-values
-dvals <- read.delim(dval_path, header = TRUE, stringsAsFactors = FALSE)
-if (!all(c("ID", "Result") %in% colnames(dvals))) {
-  stop("D-value file must have columns: ID, Result")
-}
-dval_map <- setNames(dvals$Result, dvals$ID)
-
-# Apply D-value cutoff
-keep_genes <- gene_names[!is.na(dval_map[gene_names]) & dval_map[gene_names] >= dcutoff_value]
-lost_genes <- setdiff(gene_names, keep_genes)
-
-imp_sym <- imp_sym_raw[keep_genes, keep_genes, drop = FALSE]
-
 message("Initial matrix: ", length(gene_names), " genes, ",
         sum(upper.tri(imp_sym_raw)), " gene pairs")
-        
+
+# Read D-values
+dvals <- read.delim(dval_path, header = TRUE, stringsAsFactors = FALSE)
+dval_map <- setNames(dvals$Result, dvals$ID)
+
+# Read performance metrics
+perf <- read.csv(perf_path, header = TRUE, stringsAsFactors = FALSE, na.strings = c("NA",""))
+perf_map_acc <- setNames(as.numeric(perf$Ate), perf[[1]])
+perf_map_f1  <- setNames(as.numeric(perf$F1te), perf[[1]])
+
+
+# Raw data frames
+df_genes_raw <- data.frame(Gene = names(dval_map),
+                           D_value = dval_map,
+                           stringsAsFactors = FALSE) %>%
+  filter(!is.na(D_value))
+
+g1 <- rownames(imp_sym_raw)[row(imp_sym_raw)[upper.tri(imp_sym_raw)]]
+g2 <- rownames(imp_sym_raw)[col(imp_sym_raw)[upper.tri(imp_sym_raw)]]
+d_pair_all <- pmin(dval_map[g1], dval_map[g2], na.rm = TRUE)
+
+df_pairs_raw <- data.frame(Gene_1 = g1, Gene_2 = g2, D_value = d_pair_all,
+                           stringsAsFactors = FALSE) %>%
+  filter(!is.na(D_value))
+
+# Apply D-value cutoff
+
+keep_genes <- gene_names[!is.na(dval_map[gene_names]) & dval_map[gene_names] >= dcutoff_value]
+imp_sym <- imp_sym_raw[keep_genes, keep_genes, drop = FALSE]
+
+n_genes_after_d <- length(keep_genes)
+pairs_after_d   <- sum(upper.tri(imp_sym))
+
 message("After D-value cutoff (", dcutoff_value, "): ",
-        length(keep_genes), " genes retained (",
-        length(lost_genes), " lost)")
+        n_genes_after_d, " genes retained and ", pairs_after_d, " gene pairs retained")
 
-pairs_after_d <- sum(upper.tri(imp_sym))
-message("Gene pairs retained after D cutoff: ", pairs_after_d)
-
-# Importance score cutoff
-imp_cutoff <- imp_cutoff_default
+# Apply importance cutoff
 before_pairs <- sum(!is.na(imp_sym[upper.tri(imp_sym)]))
 imp_sym[imp_sym < imp_cutoff] <- NA
 after_pairs <- sum(!is.na(imp_sym[upper.tri(imp_sym)]))
 
-message("Importance cutoff (", imp_cutoff, "): ",
-        after_pairs, " gene pairs retained (",
-        before_pairs - after_pairs, " lost)")
+# Define cutoffs list for subtitles
+cutoffs <- list(
+  raw  = list(label = "D-value",     value = dcutoff_value),
+  imp  = list(label = "Importance",  value = imp_cutoff),
+  perf = list(label = "Accuracy/F1", value = c(accuracy_cutoff, f1_cutoff))
+)
 
-# Accuracy and F1-score cutoff
-perf <- read.csv(perf_path, header = TRUE, stringsAsFactors = FALSE, na.strings = c("NA", ""))
-# Expect columns: Accuracy (Ate), F1 (F1te)
-perf_colnames <- colnames(perf)
-if (!all(c("Ate", "F1te") %in% perf_colnames)) {
-  stop("Performance file must contain columns: Ate and F1te.")
+# Genes with at least one strong connection
+strong_mat <- imp_sym >= imp_cutoff
+genes_imp_filtered <- rownames(strong_mat)[rowSums(strong_mat, na.rm = TRUE) > 0]
+
+# Build dataframes for genes and pairs surviving the importance score cutoff
+df_genes_imp <- data.frame(Gene = rownames(strong_mat),
+                           D_value = dval_map[rownames(strong_mat)],
+                           stringsAsFactors = FALSE) %>%
+  filter(!is.na(D_value),
+         Gene %in% genes_imp_filtered)
+
+# Pairs surviving importance cutoff
+pair_list_imp <- which(upper.tri(strong_mat) & strong_mat, arr.ind = TRUE)  # TRUE where >= cutoff
+df_pairs_imp <- data.frame(
+  Gene_1 = rownames(strong_mat)[pair_list_imp[,1]],
+  Gene_2 = rownames(strong_mat)[pair_list_imp[,2]],
+  D_value = pmin(dval_map[rownames(strong_mat)[pair_list_imp[,1]]],
+                 dval_map[rownames(strong_mat)[pair_list_imp[,2]]],
+                 na.rm = TRUE),
+  stringsAsFactors = FALSE
+) %>% filter(!is.na(D_value))
+
+message("After importance score cutoff (", imp_cutoff, "): ",
+        length(genes_imp_filtered), " genes retained and ", nrow(df_pairs_imp), " pairs retained")
+        
+# For plotting only! Keep genes/pairs below D-value cutoff
+imp_sym_all <- imp_sym_raw
+imp_sym_all[imp_sym_all < imp_cutoff] <- NA
+strong_mat_all <- imp_sym_all >= imp_cutoff
+genes_imp_filtered_all <- rownames(strong_mat_all)[rowSums(strong_mat_all, na.rm = TRUE) > 0]
+
+df_genes_imp_plot <- df_genes_raw %>%
+  filter(Gene %in% genes_imp_filtered_all)
+
+df_pairs_imp_plot <- df_pairs_raw %>%
+  filter(Gene_1 %in% genes_imp_filtered_all & Gene_2 %in% genes_imp_filtered_all)
+
+# Pairs-retained curve and elbow cutoff diagnostics
+
+if (nrow(df_pairs_raw) > 0) {
+  cutoff_seq <- seq(
+    min(df_pairs_raw$D_value, na.rm = TRUE),
+    max(df_pairs_raw$D_value, na.rm = TRUE),
+    length.out = 200
+  )
+
+  pair_counts <- sapply(cutoff_seq, function(cut) {
+    sum(df_pairs_raw$D_value >= cut, na.rm = TRUE)
+  })
+
+  pair_curve <- data.frame(cutoff = cutoff_seq, pairs = pair_counts)
+} else {
+  pair_curve <- data.frame(cutoff = numeric(0), pairs = numeric(0))
 }
 
-id_col <- perf_colnames[1]
-acc_col <- "Ate"
-f1_col  <- "F1te"
+# Elbow cutoff on the pair curve
+elbow_dcutoff <- elbow_cutoff(pair_curve, na_ok = TRUE)
 
-perf_map_acc <- setNames(as.numeric(perf[[acc_col]]), perf[[id_col]])
-perf_map_f1  <- setNames(as.numeric(perf[[f1_col]]), perf[[id_col]])
-
-gene_acc <- perf_map_acc[rownames(imp_sym)]
-gene_f1  <- perf_map_f1[rownames(imp_sym)]
-
-gene_acc <- as.numeric(gene_acc)
-gene_f1  <- as.numeric(gene_f1)
-
-pass_gene <- !is.na(gene_acc) & !is.na(gene_f1) & (gene_acc >= accuracy_cutoff) & (gene_f1 >= f1_cutoff)
-
-n_genes_before <- nrow(imp_sym)
-n_genes_pass   <- sum(pass_gene)
-n_genes_fail   <- n_genes_before - n_genes_pass
-message("Genes retained after per-gene accuracy/F1-score cutoffs: ", n_genes_pass, " and ", n_genes_fail, " lost)")
-
-# For any gene that fails, set its entire row/column in imp_sym to NA
-failed_genes <- rownames(imp_sym)[!pass_gene]
-
-if (length(failed_genes) > 0) {
-  imp_sym[failed_genes, ] <- NA
-  imp_sym[, failed_genes] <- NA
+# Build cutoff_df for later histograms
+cutoff_df <- data.frame(Stat = "Elbow", cutoff = elbow_dcutoff)
+if (!is.na(dcutoff_value)) {
+  cutoff_df <- rbind(cutoff_df,
+                     data.frame(Stat = "Q3", cutoff = dcutoff_value))
 }
 
-pairs_remaining <- sum(!is.na(imp_sym[upper.tri(imp_sym)]))
-message("Gene pairs remaining after per-gene accuracy/F1-score filtering: ", pairs_remaining)
+# Plot pairs-retained curve
+p_curve <- ggplot(pair_curve, aes(x = cutoff, y = pairs)) +
+  geom_point(size = 1.5, color = "black") +
+  geom_line(color = "#08519c", linewidth = 1) +
+  geom_vline(data = cutoff_df,
+             aes(xintercept = cutoff, color = Stat, linetype = Stat),
+             linewidth = 1) +
+  scale_color_manual(
+    values = c("Elbow"="#e31a1c","Q3"="#450808"),
+    labels = c(
+      paste0("Elbow (", round(elbow_dcutoff, 2), ")"),
+      paste0("Q3 (", round(dcutoff_value, 2), ")")
+    )
+  ) +
+  scale_linetype_manual(
+    values = c("Elbow"="dashed","Q3"="dotted"),
+    labels = c(
+      paste0("Elbow (", round(elbow_dcutoff, 2), ")"),
+      paste0("Q3 (", round(dcutoff_value, 2), ")")
+    )
+  ) +
+  labs(title="Pairs retained vs. D-value cutoff",
+       subtitle=paste0("Pairs retained after D-value cutoff: ", pairs_after_d),
+       x="Lineage independence cutoff (D)", y="# of gene pairs retained",
+       color="Cutoff type", linetype="Cutoff type") +
+  coord_cartesian(xlim=c(-5,5)) +
+  theme_minimal() +
+  theme(legend.position="right")
+
+# Annotate extreme outliers if present
+n_low_pairs  <- sum(df_pairs_raw$D_value < -5, na.rm = TRUE)
+n_high_pairs <- sum(df_pairs_raw$D_value >  5, na.rm = TRUE)
+
+if (n_low_pairs > 0) {
+  p_curve <- p_curve +
+    annotate("text", x = -5, y = max(pair_curve$pairs),
+             label = paste0(n_low_pairs, " pairs < -5"),
+             hjust = -0.1, vjust = -0.5, color = "blue")
+}
+if (n_high_pairs > 0) {
+  p_curve <- p_curve +
+    annotate("text", x = 5, y = max(pair_curve$pairs),
+             label = paste0(n_high_pairs, " pairs > 5"),
+             hjust = 1.1, vjust = -0.5, color = "red")
+}
+
+ggsave(file.path(out_dir, paste0("d_distribution_pairs_curve_", unique_id, ".png")),
+       plot = p_curve, width = 8, height = 6, dpi = 300, bg = "white")
+
+totals <- list(
+  raw  = list(genes = length(gene_names),             pairs = sum(upper.tri(imp_sym_raw))),
+  imp  = list(genes = length(rownames(imp_sym)),      pairs = sum(upper.tri(imp_sym))),
+  perf = list(genes = length(genes_imp_filtered),     pairs = nrow(df_pairs_imp))
+)
+
 
 # Prepare scores and stats
 scores           <- as.numeric(imp_sym_raw)
@@ -297,7 +479,7 @@ p_cdf <- ggplot(df_cdf, aes(x = score, y = cum_prop)) +
     aes(
       x     = Value,
       y     = y,
-      label = paste0("Importance score cutoff\n", format(Value, scientific = TRUE, digits = 3)),
+      label = paste0("Importance score cutoff\n", format(Value, scientific = FALSE, digits = 3)),
       fill  = I("white"),
       color = Stat
     ),
@@ -325,344 +507,82 @@ combined <- p_density + p_cdf
 output_file_combined <- file.path(out_dir, "importance_two_panel.png")
 ggsave(output_file_combined, plot = combined, width = 12, height = 6, dpi = 300)
 
-# Combined filter for D-value cutoff and importance score cutoff
-diag(imp_sym) <- NA
-strong_mat <- imp_sym >= imp_cutoff
-gene_names <- rownames(strong_mat)
-if (is.null(gene_names)) stop("No row names found in importance matrix - check: ", imp_path)
+# Performance cutoff data
 
-upper_idx <- upper.tri(strong_mat, diag = FALSE)
-pair_list <- which(upper_idx, arr.ind = TRUE)
+gene_acc <- perf_map_acc[rownames(imp_sym)]
+gene_f1  <- perf_map_f1[rownames(imp_sym)]
+pass_gene <- !is.na(gene_acc) & !is.na(gene_f1) &
+             gene_acc >= accuracy_cutoff & gene_f1 >= f1_cutoff
 
-# Gene-level data
-df_genes <- data.frame(
-  Gene     = gene_names,
-  Gene_1   = NA_character_,
-  Gene_2   = NA_character_,
-  D_value  = dval_map[gene_names],
-  Method   = "PanForest",
-  Level    = "Gene",
-  stringsAsFactors = FALSE
-) %>%
-  filter(!is.na(D_value))
+n_genes_pass   <- sum(pass_gene)
+pairs_remaining <- sum(!is.na(imp_sym[upper.tri(imp_sym)]))
 
-# Pair-level data
-if (nrow(pair_list) > 0) {
-  g1 <- gene_names[pair_list[, 1]]
-  g2 <- gene_names[pair_list[, 2]]
-
-  # For pairs, take the min D-value of the two genes
-  d_pair <- pmin(dval_map[g1], dval_map[g2], na.rm = TRUE)
-
-  df_pairs <- data.frame(
-    Gene     = NA_character_,
-    Gene_1   = g1,
-    Gene_2   = g2,
-    D_value  = d_pair,
-    Method   = "PanForest",
-    Level    = "Pair",
-    stringsAsFactors = FALSE
-  ) %>%
-    filter(!is.na(D_value))
-} else {
-  df_pairs <- data.frame(
-    Gene     = NA_character_,
-    Gene_1   = character(0),
-    Gene_2   = character(0),
-    D_value  = numeric(0),
-    Method   = character(0),
-    Level    = character(0),
-    stringsAsFactors = FALSE
-  )
-}
-
-# Calculate elbow-based cutoff
-if (nrow(df_pairs) > 0) {
-  cutoffs <- seq(
-    min(df_pairs$D_value, na.rm = TRUE),
-    max(df_pairs$D_value, na.rm = TRUE),
-    length.out = 200
-  )
-
-  pair_counts <- sapply(cutoffs, function(cut) {
-    sum(df_pairs$D_value >= cut, na.rm = TRUE)
-  })
-
-  pair_curve <- data.frame(
-    cutoff = cutoffs,
-    pairs  = pair_counts
-  )
-} else {
-  pair_curve <- data.frame(cutoff = numeric(0), pairs = numeric(0))
-}
-
-# Calculate elbow-based cutoff
-elbow_dcutoff <- elbow_cutoff(pair_curve, na_ok = TRUE)
-
-# Compute elbow pairs
-pairs_elbow <- sum(df_pairs$D_value >= elbow_dcutoff, na.rm = TRUE)
-
-# Only compute Coinfinder pairs if cutoff provided
-if (!is.null(dcutoff_value) && !is.na(dcutoff_value)) {
-  pairs_coinfinder <- sum(df_pairs$D_value >= dcutoff_value, na.rm = TRUE)
-} else {
-  pairs_coinfinder <- NA
-}
-
-# Always include the elbow cutoff
-cutoff_df <- data.frame(
-  Stat   = "Elbow",
-  cutoff = elbow_dcutoff
-)
-
-# Add Coinfinder cutoff only if it exists
-if (!is.na(dcutoff_value)) {
-  cutoff_df <- rbind(
-    cutoff_df,
-    data.frame(
-      Stat   = "Coinfinder",
-      cutoff = dcutoff_value
-    )
-  )
-}
-
-# Build subtitle for genes
-genes_imp_filtered <- gene_names[rowSums(strong_mat, na.rm = TRUE) > 0]
-
-# Genes retained at elbow D-value cutoff
-genes_elbow <- sum(
-  !is.na(dval_map[genes_imp_filtered]) &
-  dval_map[genes_imp_filtered] >= elbow_dcutoff
-)
-
-# Genes retained at Coinfinder cutoff (if provided)
-if (!is.null(dcutoff_value) && !is.na(dcutoff_value)) {
-  genes_coinfinder <- sum(
-    !is.na(dval_map[genes_imp_filtered]) &
-    dval_map[genes_imp_filtered] >= dcutoff_value
-  )
-} else {
-  genes_coinfinder <- NA
-}
-
-# Build subtitle lines dynamically
-subtitle_lines_genes <- c(
-  paste0("Elbow method cutoff - genes retained: ", genes_elbow)
-)
-if (!is.na(genes_coinfinder)) {
-  subtitle_lines_genes <- c(
-    paste0("Q3 cutoff - genes retained: ", genes_coinfinder),
-    subtitle_lines_genes
-  )
-}
-subtitle_text_genes <- paste(subtitle_lines_genes, collapse = "\n")
-
-# Build subtitle for pairs
-subtitle_lines <- c(
-  paste0("Elbow method cutoff - gene pairs retained: ", pairs_elbow)
-)
-if (!is.na(pairs_coinfinder)) {
-  subtitle_lines <- c(
-    paste0("Q3 cutoff - gene pairs retained: ", pairs_coinfinder),
-    subtitle_lines
-  )
-}
-subtitle_text_pairs <- paste(subtitle_lines, collapse = "\n")
-
-# -------------------------
-# Pairs-retained curve with elbow cutoff
-# -------------------------
-
-# Build base plot with Elbow
-p_curve <- ggplot(pair_curve, aes(x = cutoff, y = pairs)) +
-  geom_point(size = 1.5, color = "black") +
-  geom_line(color = "#08519c", linewidth = 1) +
-  geom_vline(
-    data = cutoff_df,
-    aes(xintercept = cutoff, color = Stat, linetype = Stat),
-    linewidth = 1
-  ) +
-  scale_color_manual(
-    values = c("Coinfinder" = "#450808", "Elbow" = "#e31a1c"),
-    breaks = c("Coinfinder", "Elbow"),
-    labels = c(
-      paste0("Q3 method (", signif(dcutoff_value, 3), ")"),
-      paste0("Elbow method (", signif(elbow_dcutoff, 3), ")")
-    ),
-    drop = TRUE   # <- important: drop unused levels
-  ) +
-  scale_linetype_manual(
-    values = c("Coinfinder" = "dotted", "Elbow" = "dashed"),
-    breaks = c("Coinfinder", "Elbow"),
-    labels = c(
-      paste0("Q3 method (", signif(dcutoff_value, 3), ")"),
-      paste0("Elbow method (", signif(elbow_dcutoff, 3), ")")
-    ),
-    drop = TRUE
-  ) +
-  labs(
-    title    = "Pairs retained vs. D-value cutoff",
-    subtitle = subtitle_text_pairs,
-    x        = "Lineage independence cutoff (D)",
-    y        = "# of gene pairs retained",
-    color    = "Cutoff type", linetype = "Cutoff type"
-  ) +
-  coord_cartesian(xlim = c(-5, 5)) +
-  theme_minimal() +
-  theme(legend.position = "right")
-
-n_low_pairs  <- sum(df_pairs$D_value < -5, na.rm = TRUE)
-n_high_pairs <- sum(df_pairs$D_value >  5, na.rm = TRUE)
-
-if (n_low_pairs > 0) {
-  p_curve <- p_curve +
-    annotate("text", x = -5, y = max(pair_curve$pairs),
-             label = paste0(n_low_pairs, " pairs < -5"),
-             hjust = -0.1, vjust = -0.5, color = "blue")
-}
-
-if (n_high_pairs > 0) {
-  p_curve <- p_curve +
-    annotate("text", x = 5, y = max(pair_curve$pairs),
-             label = paste0(n_high_pairs, " pairs > 5"),
-             hjust = 1.1, vjust = -0.5, color = "red")
-}
-
-ggsave(file.path(out_dir, paste0("d_distribution_pairs_curve_", unique_id, ".png")),
-       plot = p_curve, width = 8, height = 6, dpi = 300, bg = "white")
-
-# Both importance AND D-value cutoff filter
+# Final gene set after all filters
 genes_both_filtered <- genes_imp_filtered[
   !is.na(dval_map[genes_imp_filtered]) &
-  dval_map[genes_imp_filtered] >= dcutoff_value
+  dval_map[genes_imp_filtered] >= dcutoff_value &
+  genes_imp_filtered %in% rownames(imp_sym)[pass_gene]
 ]
 
+# Build df_genes_perf / df_pairs_perf
+df_genes_perf <- df_genes_imp %>% filter(Gene %in% genes_both_filtered)
+df_pairs_perf <- df_pairs_imp %>% filter(Gene_1 %in% genes_both_filtered &
+                                     Gene_2 %in% genes_both_filtered)
+                                     
+# For plotting only! Keep genes/pairs below D-value cutoff
+gene_acc_all <- perf_map_acc[rownames(imp_sym_raw)]
+gene_f1_all  <- perf_map_f1[rownames(imp_sym_raw)]
+pass_gene_all <- !is.na(gene_acc_all) & !is.na(gene_f1_all) &
+                 gene_acc_all >= accuracy_cutoff & gene_f1_all >= f1_cutoff
+
+genes_perf_filtered_all <- rownames(imp_sym_raw)[pass_gene_all]
+
+df_genes_perf_plot <- df_genes_raw %>%
+  filter(Gene %in% genes_perf_filtered_all)
+
+df_pairs_perf_plot <- df_pairs_raw %>%
+  filter(Gene_1 %in% genes_perf_filtered_all & Gene_2 %in% genes_perf_filtered_all)
+                                     
+message("After accuracy/F1 cutoffs (", accuracy_cutoff, "/", f1_cutoff, "): ",
+        n_genes_pass, " genes retained and ", nrow(df_pairs_perf), " pairs retained")
+
 # -------------------------
-# Histogram: gene-level D-values
+# Organize counts and data frames
 # -------------------------
 
-# Gene-level data for importance cutoff only
-df_genes_imp <- data.frame(
-  Gene   = genes_imp_filtered,
-  D_value = dval_map[genes_imp_filtered],
-  stringsAsFactors = FALSE
+counts <- list(
+  raw  = list(genes = n_genes_after_d,            pairs = pairs_after_d),
+  imp  = list(genes = length(genes_imp_filtered), pairs = nrow(df_pairs_imp)),
+  perf = list(genes = n_genes_pass,               pairs = nrow(df_pairs_perf))
 )
 
-# Calculate outliers above and below D-value of 5 and -5
-n_low  <- sum(df_genes_imp$D_value < -5, na.rm = TRUE)
-n_high <- sum(df_genes_imp$D_value >  5, na.rm = TRUE)
-
-p_hist_genes <- ggplot(df_genes_imp, aes(x = D_value)) +
-  geom_histogram(
-    binwidth = 0.25, boundary = dcutoff_value,
-    fill = "#6baed6", color = "#08519c", alpha = 0.6
-  ) +
-  geom_vline(data = cutoff_df,
-             aes(xintercept = cutoff, color = Stat, linetype = Stat),
-             linewidth = 1) +
-  scale_color_manual(values = c("Elbow" = "#e31a1c", "Coinfinder" = "#450808")
-  ) +
-  scale_linetype_manual(values = c("Elbow" = "dashed", "Coinfinder" = "dotted")
-  ) +
-  scale_x_continuous(
-    breaks = seq(-5, 5, by = 1.0)   
-  ) +
-  labs(
-    title = paste("Distribution of gene D-values -", unique_id),
-    subtitle = subtitle_text_genes,
-    x = "D-value", y = "Gene count",
-    color    = "Cutoff type", linetype = "Cutoff type"
-  ) +
-  coord_cartesian(xlim = c(-5, 5)) +
-  theme_minimal()
-
-# If outliers, annotate in plot
-if (n_low > 0) {
-  p_hist_genes <- p_hist_genes +
-    annotate(
-      "text",
-      x = -Inf, y = Inf,
-      label = paste0(n_low, " genes < D: -5"),
-      hjust = -0.1, vjust = 2,
-      color = "blue"
-    )
-}
-
-if (n_high > 0) {
-  p_hist_genes <- p_hist_genes +
-    annotate(
-      "text",
-      x = -Inf, y = Inf,
-      label = paste0(n_high, " genes > D: 5"),
-      hjust = -0.1, vjust = 3.5,
-      color = "red"
-    )
-}
-
-# -------------------------
-# Histogram: pair-level D-values
-# -------------------------
-
-# Pair-level data for importance cutoff only
-df_pairs_imp <- subset(
-  df_pairs,
-  !is.na(D_value) & D_value >= imp_cutoff
+dfs <- list(
+  raw  = list(genes = df_genes_raw,       pairs = df_pairs_raw),
+  imp  = list(genes = df_genes_imp_plot,  pairs = df_pairs_imp_plot),
+  perf = list(genes = df_genes_perf_plot, pairs = df_pairs_perf_plot)
 )
 
-p_hist_pairs <- ggplot(df_pairs_imp, aes(x = D_value)) +
-  geom_histogram(
-    binwidth = 0.25, boundary = dcutoff_value,
-    fill = "#fdae6b", color = "#e6550d", alpha = 0.6
-  ) +
-  geom_vline(data = cutoff_df,
-             aes(xintercept = cutoff, color = Stat, linetype = Stat),
-             linewidth = 1) +
-  scale_color_manual(values = c("Elbow" = "#e31a1c", "Coinfinder" = "#450808")
-  ) +
-  scale_linetype_manual(values = c("Elbow" = "dashed", "Coinfinder" = "dotted")
-  ) +
-  scale_x_continuous(
-    breaks = seq(-5, 5, by = 1.0)   
-  ) +
-  labs(
-    title = paste("Distribution of gene pairs D-values -", unique_id),
-    subtitle = subtitle_text_pairs,
-    x = "D-value (min of source & target)",
-    y = "Pair count",
-    color    = "Cutoff type", linetype = "Cutoff type"
-  ) +
-  coord_cartesian(xlim = c(-5, 5)) +
-  theme_minimal()
-  
-# If outliers, annotate in plot
-if (n_low_pairs > 0) {
-  p_hist_pairs <- p_hist_pairs +
-    annotate(
-      "text",
-      x = -Inf, y = Inf,
-      label = paste0(n_low_pairs, " pairs < D: -5"),
-      hjust = -0.1, vjust = 2,
-      color = "blue"
-    )
-}
+# -------------------------
+# Generate histograms for each stage
+# -------------------------
 
-if (n_high_pairs > 0) {
-  p_hist_pairs <- p_hist_pairs +
-    annotate(
-      "text",
-      x = -Inf, y = Inf,
-      label = paste0(n_high_pairs, " pairs > D: 5"),
-      hjust = -0.1, vjust = 3.5,
-      color = "red"
-    )
-}
+for (stage in names(dfs)) {
+  p_genes <- make_hist(dfs[[stage]]$genes,
+                       make_subtitle(stage, "genes", counts, totals, cutoffs),
+                       paste("Distribution of gene D-values -", unique_id),
+                       "genes", cutoff_df, dcutoff_value)
 
-# Combine into two-panel figure
-combined_dval_plots <- (p_hist_genes + p_hist_pairs) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "right")
-output_file_dvals <- file.path(out_dir, "dvalue_histograms.png")
-ggsave(output_file_dvals, plot = combined_dval_plots, width = 12, height = 6, dpi = 300)
+  p_pairs <- make_hist(dfs[[stage]]$pairs,
+                       make_subtitle(stage, "pairs", counts, totals, cutoffs),
+                       paste("Distribution of gene pairs D-values -", unique_id),
+                       "pairs", cutoff_df, dcutoff_value)
+
+  combined <- (p_genes + p_pairs) + plot_layout(guides="collect") &
+              theme(legend.position="right")
+
+  ggsave(file.path(out_dir, paste0(stage, "_histograms.png")),
+         plot=combined, width=12, height=6, dpi=300)
+}
 
 # Per-gene summaries
 gene_counts <- rowSums(strong_mat, na.rm = TRUE)
@@ -672,11 +592,20 @@ gene_mean_scores <- apply(imp_sym, 1, function(x) {
   mean(vals)
 })
 
-genes_both_filtered <- genes_imp_filtered[!is.na(dval_map[genes_imp_filtered]) & dval_map[genes_imp_filtered] >= dcutoff_value]
-
 # Summaries
-df_counts <- data.frame(Gene = gene_names, value = gene_counts, metric = "Partner count", stringsAsFactors = FALSE) %>% filter(Gene %in% genes_both_filtered)
-df_means  <- data.frame(Gene = gene_names, value = gene_mean_scores, metric = "Mean importance score", stringsAsFactors = FALSE) %>% filter(Gene %in% genes_both_filtered)
+df_counts <- data.frame(
+  Gene   = names(gene_counts),
+  value  = gene_counts,
+  metric = "Partner count",
+  stringsAsFactors = FALSE
+) %>% filter(Gene %in% genes_both_filtered)
+
+df_means <- data.frame(
+  Gene   = names(gene_mean_scores),
+  value  = gene_mean_scores,
+  metric = "Mean importance score",
+  stringsAsFactors = FALSE
+) %>% filter(Gene %in% genes_both_filtered)
 
 # Partner and mean importance score distribution histograms
 # Distribution of partner counts (all genes)
@@ -714,8 +643,8 @@ ggsave(file.path(out_dir, "per_gene_histograms.png"),
 
 # Write output data
 df_out <- bind_rows(
-  df_genes %>% mutate(Gene = Gene),
-  df_pairs %>% mutate(Gene = NA_character_)
+  df_genes_perf %>% mutate(Gene = Gene),
+  df_pairs_perf %>% mutate(Gene = NA_character_)
 )
 write_csv(df_out, file.path(out_dir, paste0("panforest_dvalues_", unique_id, ".csv")))
 message("D-value CSV saved to: ", file.path(out_dir, paste0("panforest_dvalues_", unique_id, ".csv")))
