@@ -642,7 +642,9 @@ for (stage in names(dfs)) {
          plot=combined, width=12, height=6, dpi=300)
 }
 
-# Per-gene summaries
+# Per-gene summaries - Q3
+
+# Partner counts for Q3 survivors
 gene_counts <- rowSums(strong_mat, na.rm = TRUE)
 gene_mean_scores <- apply(imp_sym, 1, function(x) {
   vals <- x[!is.na(x) & x >= imp_cutoff]
@@ -665,16 +667,18 @@ df_means <- data.frame(
   stringsAsFactors = FALSE
 ) %>% filter(Gene %in% genes_both_filtered)
 
-# Distribution of partner counts (surviving genes after all cutoffs)
+# Distribution of partner counts
 p_counts <- ggplot(df_counts, aes(x = value)) +
   geom_histogram(binwidth = 1, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
   labs(
-    title = "Distribution of gene partners \n(surviving genes after all cutoffs)",
+    title = "Distribution of gene partners (surviving genes after all cutoffs, Q3)",
     subtitle = paste0(
-      "Importance cutoff = ", round(imp_cutoff, 3),
-      " | Mean gene partners = ", round(mean(df_counts$value, na.rm = TRUE), 2)
+      "D-value cutoff = ", round(dcutoff_value, 3), "\n",
+      "Importance cutoff = ", round(imp_cutoff, 3), "\n",
+      "Accuracy/F1 cutoffs = (", accuracy_cutoff, "/", f1_cutoff, ")\n",
+      "Mean gene partners = ", round(mean(df_counts$value, na.rm = TRUE), 2)
     ),
-    x = "Number of partners >= cutoff",
+    x = "Number of partners",
     y = "Gene count"
   ) +
   theme_minimal()
@@ -684,16 +688,18 @@ ggsave(
   plot = p_counts, width = 8, height = 6, dpi = 300, bg = "white"
 )
 
-# Distribution of mean importance scores (surviving genes after all cutoffs)
+# Distribution of mean importance scores
 p_means <- ggplot(df_means, aes(x = value)) +
   geom_histogram(fill = "#fc9272", color = "#cb181d", alpha = 0.6, bins = 30) +
   labs(
-    title = "Distribution of mean importance scores \n(surviving genes after all cutoffs)",
+    title = "Distribution of mean importance scores (surviving genes after all cutoffs, Q3)",
     subtitle = paste0(
-      "D-value cutoff = ", round(dcutoff_value, 3),
-      " | Average mean importance score = ", round(mean(df_means$value, na.rm = TRUE), 3)
+      "D-value cutoff = ", round(dcutoff_value, 3), "\n",
+      "Importance cutoff = ", round(imp_cutoff, 3), "\n",
+      "Accuracy/F1 cutoffs = (", accuracy_cutoff, "/", f1_cutoff, ")\n",
+      "Average mean importance score = ", round(mean(df_means$value, na.rm = TRUE), 3)
     ),
-    x = "Mean importance score >= cutoff",
+    x = "Mean importance score",
     y = "Gene count"
   ) +
   theme_minimal()
@@ -701,6 +707,73 @@ p_means <- ggplot(df_means, aes(x = value)) +
 ggsave(
   file.path(out_dir, paste0("mean_imp_hist_", unique_id, ".png")),
   plot = p_means, width = 8, height = 6, dpi = 300, bg = "white"
+)
+
+# Per-gene summaries - elbow
+
+# Partner counts for elbow survivors
+gene_counts_elbow <- rowSums(strong_mat_elbow, na.rm = TRUE)
+gene_mean_scores_elbow <- apply(imp_sym_elbow, 1, function(x) {
+  vals <- x[!is.na(x) & x >= imp_cutoff]
+  if (length(vals) == 0) return(NA)
+  mean(vals)
+})
+
+# Summaries restricted to elbow-filtered survivors
+df_counts_elbow <- data.frame(
+  Gene   = names(gene_counts_elbow),
+  value  = gene_counts_elbow,
+  metric = "Partner count",
+  stringsAsFactors = FALSE
+) %>% filter(Gene %in% genes_both_filtered_elbow)
+
+df_means_elbow <- data.frame(
+  Gene   = names(gene_mean_scores_elbow),
+  value  = gene_mean_scores_elbow,
+  metric = "Mean importance score",
+  stringsAsFactors = FALSE
+) %>% filter(Gene %in% genes_both_filtered_elbow)
+
+# Distribution of partner counts
+p_counts_elbow <- ggplot(df_counts_elbow, aes(x = value)) +
+  geom_histogram(binwidth = 1, fill = "#6baed6", color = "#08519c", alpha = 0.6) +
+  labs(
+    title = "Distribution of gene partners (surviving genes after all cutoffs, elbow)",
+    subtitle = paste0(
+      "D-value cutoff = ", round(elbow_dcutoff, 3), "\n",
+      "Importance cutoff = ", round(imp_cutoff, 3), "\n",
+      "Accuracy/F1 cutoffs = (", accuracy_cutoff, "/", f1_cutoff, ")\n",
+      "Mean gene partners = ", round(mean(df_counts_elbow$value, na.rm = TRUE), 2)
+    ),
+    x = "Number of partners",
+    y = "Gene count"
+  ) +
+  theme_minimal()
+
+ggsave(
+  file.path(out_dir, paste0("partners_hist_elbow_", unique_id, ".png")),
+  plot = p_counts_elbow, width = 8, height = 6, dpi = 300, bg = "white"
+)
+
+# Distribution of mean importance scores
+p_means_elbow <- ggplot(df_means_elbow, aes(x = value)) +
+  geom_histogram(fill = "#fc9272", color = "#cb181d", alpha = 0.6, bins = 30) +
+  labs(
+    title = "Distribution of mean importance scores (surviving genes after all cutoffs, elbow)",
+    subtitle = paste0(
+      "D-value cutoff = ", round(elbow_dcutoff, 3), "\n",
+      "Importance cutoff = ", round(imp_cutoff, 3), "\n",
+      "Accuracy/F1 cutoffs = (", accuracy_cutoff, "/", f1_cutoff, ")\n",
+      "Average mean importance score = ", round(mean(df_means_elbow$value, na.rm = TRUE), 3)
+    ),
+    x = "Mean importance score",
+    y = "Gene count"
+  ) +
+  theme_minimal()
+
+ggsave(
+  file.path(out_dir, paste0("mean_imp_hist_elbow_", unique_id, ".png")),
+  plot = p_means_elbow, width = 8, height = 6, dpi = 300, bg = "white"
 )
 
 # Write output data
