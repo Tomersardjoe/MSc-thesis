@@ -12,7 +12,18 @@ mode="unfiltered"
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
-      dataset="$2"
+      case ${2:-} in
+        real)    dataset="real_pangenomes" ;;
+        perfect) dataset="simulated_pangenomes_perfect" ;;
+        flip)    dataset="simulated_pangenomes_flip" ;;
+        real_pangenomes|simulated_pangenomes_perfect|simulated_pangenomes_flip)
+                 dataset="$2" ;;
+        *)
+          echo "Invalid dataset: ${2:-<missing>}"
+          echo "Allowed values: real, perfect, flip"
+          exit 1
+          ;;
+      esac
       shift 2
       ;;
     --mode)
@@ -20,14 +31,14 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes> [--mode <unfiltered|filtered>]"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>]"
       exit 1
       ;;
   esac
 done
 
 if [ -z "$dataset" ]; then
-    echo "Error: You must provide --dataset <real_pangenomes|simulated_pangenomes>"
+    echo "Error: You must provide --dataset <real|perfect|flip>"
     exit 1
 fi
 
@@ -65,7 +76,7 @@ for gpa_file in "$gpa_dir"/*_REDUCED.csv; do
 
         matrix="${outdir}/collapsed_matrix.csv"
     else
-         # Step 1a: Filter GPA matrix by D > 0
+        # Step 1a: Filter GPA matrix by D > 0
         dstat_file="${dataset}/coinfinder_runs/${species_taxid}/coincident_nodes_all.tsv"
         if [ ! -f "$dstat_file" ]; then
             echo "Warning: D-stat file not found for ${species_taxid}, skipping."

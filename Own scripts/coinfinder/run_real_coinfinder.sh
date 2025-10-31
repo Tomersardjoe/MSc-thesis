@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 required_env="coinfinder_new"
-if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
+if [ "${CONDA_DEFAULT_ENV:-}" != "$required_env" ]; then
     echo "Please activate the '$required_env' environment before running this script."
     exit 1
 fi
@@ -11,11 +11,22 @@ dataset=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
-      dataset="$2"
+      case ${2:-} in
+        real)    dataset="real_pangenomes" ;;
+        perfect) dataset="simulated_pangenomes_perfect" ;;
+        flip)    dataset="simulated_pangenomes_flip" ;;
+        real_pangenomes|simulated_pangenomes_perfect|simulated_pangenomes_flip)
+                 dataset="$2" ;;
+        *)
+          echo "Invalid dataset: ${2:-<missing>}"
+          echo "Allowed values: real, perfect, flip"
+          exit 1
+          ;;
+      esac
       shift 2
       ;;
     *)
-      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes>"
+      echo "Usage: $0 --dataset <real|perfect|flip>"
       exit 1
       ;;
   esac
@@ -23,10 +34,11 @@ done
 
 # Require dataset flag
 if [ -z "$dataset" ]; then
-    echo "Error: You must provide --dataset <real_pangenomes|simulated_pangenomes>"
+    echo "Error: You must provide --dataset <real|perfect|flip>"
     exit 1
 fi
 
+# Directories
 tree_dir="real_pangenomes/tree_matches"
 gpa_dir="${dataset}/gpa_matches"
 out_base="${dataset}/coinfinder_runs"
@@ -47,7 +59,7 @@ for tree_file in "$tree_dir"/*.nwk; do
     species_taxid="${basename_noext#reduced_}"
 
     gpa_file=$(ls "${gpa_dir}"/*"${species_taxid}"_REDUCED.tab 2>/dev/null | head -n1)
-    if [ ! -f "$gpa_file" ]; then
+    if [ ! -f "${gpa_file:-}" ]; then
         echo "Warning: No GPA file for ${species_taxid}, skipping."
         continue
     fi

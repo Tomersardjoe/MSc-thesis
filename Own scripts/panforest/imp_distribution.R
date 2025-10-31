@@ -776,10 +776,40 @@ ggsave(
   plot = p_means_elbow, width = 8, height = 6, dpi = 300, bg = "white"
 )
 
-# Write output data
-df_out <- bind_rows(
-  df_genes_perf %>% mutate(Gene = Gene),
-  df_pairs_perf %>% mutate(Gene = NA_character_)
+# -------------------------
+# Write output data for comparative plots
+# -------------------------
+
+# Gene-level data
+df_genes <- df_genes_perf %>%
+  transmute(
+    Gene       = Gene,
+    Gene_1     = NA_character_,
+    Gene_2     = NA_character_,
+    D_value    = D_value,
+    Method     = "PanForest",
+    Level      = "Gene"
+  ) %>%
+  filter(!is.na(D_value))
+
+# Pair-level data
+df_pairs <- df_pairs_perf %>%
+  transmute(
+    Gene       = NA_character_,
+    Gene_1     = Gene_1,
+    Gene_2     = Gene_2,
+    D_value    = D_value,
+    Method     = "PanForest",
+    Level      = "Pair"
+  ) %>%
+  filter(!is.na(D_value))
+
+# Combine and write
+df_out <- bind_rows(df_genes, df_pairs)
+
+write_csv(
+  df_out,
+  file.path(out_dir, paste0("panforest_dvalues_", unique_id, ".csv"))
 )
-write_csv(df_out, file.path(out_dir, paste0("panforest_dvalues_", unique_id, ".csv")))
+
 message("D-value CSV saved to: ", file.path(out_dir, paste0("panforest_dvalues_", unique_id, ".csv")))

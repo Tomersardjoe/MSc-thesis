@@ -12,7 +12,18 @@ mode="unfiltered"
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
-      dataset="$2"
+      case ${2:-} in
+        real)    dataset="real_pangenomes" ;;
+        perfect) dataset="simulated_pangenomes_perfect" ;;
+        flip)    dataset="simulated_pangenomes_flip" ;;
+        real_pangenomes|simulated_pangenomes_perfect|simulated_pangenomes_flip)
+                 dataset="$2" ;;
+        *)
+          echo "Invalid dataset: ${2:-<missing>}"
+          echo "Allowed values: real, perfect, flip"
+          exit 1
+          ;;
+      esac
       shift 2
       ;;
     --mode)
@@ -20,14 +31,14 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      echo "Usage: $0 --dataset <real_pangenomes|simulated_pangenomes> [--mode <unfiltered|filtered>]"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>]"
       exit 1
       ;;
   esac
 done
 
 if [ -z "$dataset" ]; then
-    echo "Error: You must provide --dataset <real_pangenomes|simulated_pangenomes>"
+    echo "Error: You must provide --dataset <real|perfect|flip>"
     exit 1
 fi
 
@@ -69,11 +80,6 @@ for run_dir in "$panforest_dir"/*/; do
     collapsed_matrix="${run_dir}collapsed_matrix.csv"
     if [ ! -f "$collapsed_matrix" ]; then
         echo "  Skipping $run_id - no collapsed_matrix.csv found."
-        continue
-    fi
-
-    if [ ! -f "$collapsed_matrix" ]; then
-        echo "  Skipping $run_id - no $collapsed_matrix found."
         continue
     fi
 

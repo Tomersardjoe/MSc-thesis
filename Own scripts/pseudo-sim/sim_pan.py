@@ -26,12 +26,16 @@ def convert_gpa_to_tab(gpa_csv, output_tab):
                     continue
 def main():
     parser = argparse.ArgumentParser(
-        description="Insert shuffled duplicates into GPA and graft them into a tree"
+        description="Insert shuffled duplicates into a GPA"
+    )
+    parser.add_argument(
+        "--dup_mode",
+        choices=["perfect", "flip"],
+        default="perfect",
+        help="Duplication mode: 'perfect' for identical copies, 'flip' for single-bit flips (default: perfect)"
     )
     parser.add_argument("nodes_tsv", help="Path to nodes_all.tsv file")
     parser.add_argument("gpa_csv", help="Path to gene_presence_absence.csv file")
-    parser.add_argument("--tree_in", help="Input Newick tree file")
-    parser.add_argument("--tree_out", help="Output Newick tree with duplicates")
     parser.add_argument(
         "-o", "--output", default="gpa_with_duplicates.csv",
         help="Output CSV file (default: gpa_with_duplicates.csv)"
@@ -60,8 +64,18 @@ def main():
 
     # Find matches and create duplicates
     matches = [gene for gene in gpa_df.index if gene in selected_genes]
-    dup_rows = gpa_df.loc[matches].copy()
-    dup_rows.index = [f"{idx}_dup" for idx in dup_rows.index]
+    dup_list = []
+    if args.dup_mode == "perfect":
+        dup_rows = gpa_df.loc[matches].copy()
+        dup_rows.index = [f"{idx}_dup" for idx in dup_rows.index]
+    else:  # single-bit flip mode
+        for gene in matches:
+            row = gpa_df.loc[gene].copy()
+            flip_col = random.choice(gpa_df.columns)
+            row[flip_col] = 1 - int(row[flip_col])
+            row.name = f"{gene}_dup"
+            dup_list.append(row)
+        dup_rows = pd.DataFrame(dup_list)
 
     # Shuffle duplicates
     dup_rows = dup_rows.sample(frac=1).reset_index()

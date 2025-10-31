@@ -6,10 +6,28 @@ if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
     exit 1
 fi
 
+dup_mode="perfect"   # default
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --dup_mode)
+      dup_mode="$2"
+      shift 2
+      ;;
+    --dup_mode=*)
+      dup_mode="${1#*=}"
+      shift
+      ;;
+    *)
+      echo "Usage: $0 [--dup_mode <perfect|flip>]"
+      exit 1
+      ;;
+  esac
+done
+
 nodes_dir="real_pangenomes/coinfinder_runs"
 gpa_dir="real_pangenomes/gpa_matches"
 script="scripts/pseudo-sim/sim_pan.py"
-out_base="simulated_pangenomes"
+out_base="simulated_pangenomes_${dup_mode}"
 
 # Safety checks
 for d in "$nodes_dir" "$gpa_dir"; do
@@ -49,7 +67,8 @@ for nodes_file in "$nodes_dir"/*/coincident_nodes_all.tsv; do
         "$nodes_file" \
         "$gpa_file" \
         -o "${outdir}/gpa_matches/duplicates_${species_taxid}_REDUCED.csv" \
-        --tab_out "${outdir}/gpa_matches/duplicates_${species_taxid}_REDUCED.tab"
+        --tab_out "${outdir}/gpa_matches/duplicates_${species_taxid}_REDUCED.tab" \
+        --dup_mode "$dup_mode"
 
     echo "Finished ${species_taxid}"
 done
