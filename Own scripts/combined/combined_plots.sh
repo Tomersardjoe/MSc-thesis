@@ -99,7 +99,7 @@ for run_dir in "$coinfinder_dir"/*/; do
     if [ "$dataset" = "simulated_pangenomes_perfect" ] && has_data "$pan_file" && \
        ! has_data "$coin_file" && ! has_data "$gold_file"; then
         echo "Error: perfect dataset run $run_id has only PanForest data. Exiting."
-        exit 1
+        continue
     fi
         
     # Run-specific output directory
