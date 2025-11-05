@@ -11,6 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Parse arguments
 dataset=""
 mode="unfiltered"
+scope="selected"   # default
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -29,11 +31,29 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --mode)
-      mode="$2"
+      case ${2:-} in
+        unfiltered|filtered) mode="$2" ;;
+        *)
+          echo "Invalid mode: ${2:-<missing>}"
+          echo "Allowed values: unfiltered, filtered"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
       shift 2
       ;;
     *)
-      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>]"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>] [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -44,19 +64,29 @@ if [ -z "$dataset" ]; then
     exit 1
 fi
 
-panforest_dir="$(realpath "${dataset}/panforest_runs/${mode}")"
-coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
+# Scope-aware directories
+panforest_dir="$(realpath "${dataset}/panforest_runs_${scope}/${mode}")"
+coinfinder_dir="$(realpath "${dataset}/coinfinder_runs_${scope}")"
+
+# Choose GPA directory based on scope (not directly used here, but consistent)
+if [ "$scope" = "all" ]; then
+    gpa_dir="$(realpath "${dataset}/gpa_matches_all_not_pruned")"
+else
+    gpa_dir="$(realpath "${dataset}/gpa_matches")"
+fi
 
 # Safety: bail if directory isn’t found
-if [ ! -d "$panforest_dir" ]; then
-    echo "Error: Directory '$panforest_dir' not found. Check the path."
-    exit 1
-fi
+for d in "$panforest_dir" "$coinfinder_dir" "$gpa_dir"; do
+    if [ ! -d "$d" ]; then
+        echo "Error: Directory '$d' not found. Check the path."
+        exit 1
+    fi
+done
 
 # Loop through each run directory
 for run_dir in "$panforest_dir"/*/; do
     run_id=$(basename "$run_dir")
-    echo "Processing run: $run_id (${mode})"
+    echo "Processing run: $run_id (${mode}, scope=${scope})"
 
     imp_file="${run_dir}/imp.csv"
     perf_file="${run_dir}/performance.csv"
@@ -89,6 +119,6 @@ for run_dir in "$panforest_dir"/*/; do
         "$(realpath "$dval_file")" \
         "$dcutoff_value"
 
-    echo "  Finished $run_id (${mode})"
+    echo "  Finished $run_id (${mode}, scope=${scope})"
     echo
 done

@@ -11,6 +11,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse arguments
 dataset=""
+scope="selected"   # default
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -28,8 +30,19 @@ while [[ $# -gt 0 ]]; do
       esac
       shift 2
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <real|perfect|flip>"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -41,21 +54,29 @@ if [ -z "$dataset" ]; then
     exit 1
 fi
 
-goldfinder_dir="$(realpath "${dataset}/goldfinder_runs")"
-coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
+# Scope-aware run directories
+goldfinder_dir="$(realpath "${dataset}/goldfinder_runs_${scope}")"
+coinfinder_dir="$(realpath "${dataset}/coinfinder_runs_${scope}")"
 
-# Safety: bail if directory isn’t found
-for dir in "$goldfinder_dir" "$coinfinder_dir"; do
+# Choose GPA directory based on scope (not directly used here, but consistent)
+if [ "$scope" = "all" ]; then
+    gpa_dir="$(realpath "${dataset}/gpa_matches_all_not_pruned")"
+else
+    gpa_dir="$(realpath "${dataset}/gpa_matches")"
+fi
+
+# Safety: bail if directories aren’t found
+for dir in "$goldfinder_dir" "$coinfinder_dir" "$gpa_dir"; do
     if [ ! -d "$dir" ]; then
         echo "Error: Directory '$dir' not found. Check the path."
         exit 1
     fi
 done
 
-# Loop through each subdirectory in goldfinder_runs
+# Loop through each subdirectory in goldfinder_runs_${scope}
 for run_dir in "$goldfinder_dir"/*/; do
     run_id=$(basename "$run_dir")
-    echo "Processing run: $run_id"
+    echo "Processing run: $run_id (scope=${scope})"
 
     nodes_file="$coinfinder_dir/$run_id/coincident_nodes_all.tsv"
     d_cutoff_file="$coinfinder_dir/$run_id/d_cutoff/${run_id}_d_cutoff.txt"
@@ -80,6 +101,6 @@ for run_dir in "$goldfinder_dir"/*/; do
         "$(realpath "$d_cutoff_file")" \
         "$(realpath "$pairs_file")"
 
-    echo "  Finished $run_id"
+    echo "  Finished $run_id (scope=${scope})"
     echo
 done

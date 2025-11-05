@@ -32,4 +32,4 @@ for dataset_dir in "$PARENT_DIR"/*/; do
   echo "-----------------------------"
 done
 
-echo "FDR-BH applied to all Coinfinder datasets."
+echo "FDR-BH applied to all Coinfinder subdirectories."

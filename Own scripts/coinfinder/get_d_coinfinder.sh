@@ -11,6 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Parse arguments
 dataset=""
+scope="selected"   # default
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -28,8 +29,19 @@ while [[ $# -gt 0 ]]; do
       esac
       shift 2
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <real|perfect|flip>"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -41,8 +53,15 @@ if [ -z "$dataset" ]; then
     exit 1
 fi
 
-coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
-gpa_dir="$(realpath "${dataset}/gpa_matches")"
+# Scope-aware coinfinder directory
+coinfinder_dir="$(realpath "${dataset}/coinfinder_runs_${scope}")"
+
+# Choose GPA directory based on scope
+if [ "$scope" = "all" ]; then
+    gpa_dir="$(realpath "${dataset}/gpa_matches_all_not_pruned")"
+else
+    gpa_dir="$(realpath "${dataset}/gpa_matches")"
+fi
 
 # Safety: bail if directories aren’t found
 for d in "$coinfinder_dir" "$gpa_dir"; do
@@ -52,10 +71,10 @@ for d in "$coinfinder_dir" "$gpa_dir"; do
     fi
 done
 
-# Loop through each subdirectory in coinfinder_runs
+# Loop through each subdirectory in coinfinder_runs_${scope}
 for run_dir in "$coinfinder_dir"/*/; do
     run_id=$(basename "$run_dir")
-    echo "Processing run: $run_id"
+    echo "Processing run: $run_id (scope=${scope})"
 
     nodes_file="${run_dir}coincident_nodes_all.tsv"
     pairs_file="${run_dir}coincident_pairs.tsv"
@@ -82,6 +101,6 @@ for run_dir in "$coinfinder_dir"/*/; do
         "$(realpath "$tree_file")" \
         "$(realpath "$gpa_file")"
 
-    echo "  Finished $run_id"
+    echo "  Finished $run_id (scope=${scope})"
     echo
 done

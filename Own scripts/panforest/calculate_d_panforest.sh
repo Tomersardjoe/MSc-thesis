@@ -9,6 +9,8 @@ fi
 # Parse arguments
 dataset=""
 mode="unfiltered"
+scope="selected"   # default
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -30,8 +32,19 @@ while [[ $# -gt 0 ]]; do
       mode="$2"
       shift 2
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>]"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>] [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -45,8 +58,8 @@ fi
 # Get the directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 panscript_dir="$(realpath "panforest")"
-panforest_dir="$(realpath "${dataset}/panforest_runs/${mode}")"
-coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
+panforest_dir="$(realpath "${dataset}/panforest_runs_${scope}/${mode}")"
+coinfinder_dir="$(realpath "${dataset}/coinfinder_runs_${scope}")"
 
 # Safety: bail if directories aren’t found
 for d in "$panforest_dir" "$coinfinder_dir"; do
@@ -56,10 +69,10 @@ for d in "$panforest_dir" "$coinfinder_dir"; do
     fi
 done
 
-# Loop through each subdirectory in panforest_runs/<mode>
+# Loop through each subdirectory in panforest_runs_${scope}/<mode>
 for run_dir in "$panforest_dir"/*/; do
     run_id=$(basename "$run_dir")
-    echo "Processing run: $run_id (${mode})"
+    echo "Processing run: $run_id (${mode}, scope=${scope})"
 
     mkdir -p "${run_dir}imp_cutoff"
 
@@ -93,18 +106,24 @@ for run_dir in "$panforest_dir"/*/; do
         continue
     fi
 
-    # Step 2: Find matching fixed tree in coinfinder_runs
+    # Step 2: Find matching fixed tree in coinfinder_runs_${scope}
     fixed_tree="${coinfinder_dir}/${run_id}/${run_id}_fixed.nwk"
     if [ ! -f "$fixed_tree" ]; then
         echo "  Skipping $run_id - fixed tree not found: $fixed_tree"
         continue
     fi
 
-    # Step 3: Run calculate_d.R
+    # Step 3: Run calculate_d*.R depending on scope
+    if [ "$scope" = "selected" ]; then
+        calc_script="calculate_d.R"
+    else
+        calc_script="calculate_d_100.R"
+    fi
+
     (
       cd "$run_dir" || exit
-      echo "  Running calculate_d.R for $run_id..."
-      NUMBA_NUM_THREADS=24 Rscript "$panscript_dir/calculate_d.R" \
+      echo "  Running $calc_script for $run_id..."
+      NUMBA_NUM_THREADS=24 Rscript "$panscript_dir/$calc_script" \
           -a . \
           -t "$(realpath "$fixed_tree")" \
           -g "imp_cutoff/${run_id}_collapsed_matrix_clean.csv" \
@@ -112,6 +131,6 @@ for run_dir in "$panforest_dir"/*/; do
           -o "imp_cutoff"
     )
 
-    echo "  Finished $run_id (${mode})"
+    echo "  Finished $run_id (${mode}, scope=${scope})"
     echo
 done
