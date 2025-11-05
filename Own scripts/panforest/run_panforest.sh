@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 
 required_env="panforest"
-if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
+if [ "${CONDA_DEFAULT_ENV:-}" != "$required_env" ]; then
     echo "Please activate the '$required_env' environment before running this script."
     exit 1
 fi
 
-# Parse arguments
+# Defaults
 dataset=""
 mode="unfiltered"
+scope="selected"
+MAX_JOBS=4
+
+# Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -30,8 +34,19 @@ while [[ $# -gt 0 ]]; do
       mode="$2"
       shift 2
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>]"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>] [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -42,10 +57,21 @@ if [ -z "$dataset" ]; then
     exit 1
 fi
 
-gpa_dir="${dataset}/gpa_matches"
+# Directories depend on scope
+if [ "$scope" = "selected" ]; then
+    gpa_dir="${dataset}/gpa_matches"
+    out_base="${dataset}/panforest_runs_selected/${mode}"
+    parallel=false
+    panforest_args=(-n 1000 -d 16)
+else
+    gpa_dir="${dataset}/gpa_matches_all"
+    out_base="${dataset}/panforest_runs_all/${mode}"
+    parallel=true
+    panforest_args=(-n 500 -d 8)
+fi
+
 pan_dir="panforest"
 script_dir="scripts/panforest"
-out_base="${dataset}/panforest_runs/${mode}"
 
 if [ ! -d "$gpa_dir" ]; then
     echo "Error: Directory '$gpa_dir' not found. Check the path."
@@ -54,12 +80,13 @@ fi
 
 mkdir -p "$out_base"
 
+# Preprocess matrices
 for gpa_file in "$gpa_dir"/*_REDUCED.csv; do
     filename=$(basename "$gpa_file")
     base="${filename%_REDUCED.csv}"
     species_taxid="${base##*_}"
 
-    echo "Starting ${species_taxid} (${mode})..."
+    echo "[$(date +%H:%M:%S)] Preprocessing ${species_taxid} (${mode}, scope=${scope})..."
 
     outdir="${out_base}/${species_taxid}"
     mkdir -p "$outdir"
@@ -68,16 +95,12 @@ for gpa_file in "$gpa_dir"/*_REDUCED.csv; do
     outdir="$(realpath "$outdir")"
 
     if [ "$mode" = "unfiltered" ]; then
-        # Step 1: Process matrix
         python3 "$pan_dir/process_matrix.py" \
             -i "$gpa_file" \
             -o "${outdir}/collapsed_matrix.csv" \
             -d "$outdir"
-
-        matrix="${outdir}/collapsed_matrix.csv"
     else
-        # Step 1a: Filter GPA matrix by D > 0
-        dstat_file="${dataset}/coinfinder_runs/${species_taxid}/coincident_nodes_all.tsv"
+        dstat_file="${dataset}/coinfinder_runs_${scope}/${species_taxid}/coincident_nodes_all.tsv"
         if [ ! -f "$dstat_file" ]; then
             echo "Warning: D-stat file not found for ${species_taxid}, skipping."
             continue
@@ -87,24 +110,40 @@ for gpa_file in "$gpa_dir"/*_REDUCED.csv; do
             "$gpa_file" \
             "$dstat_file" \
             -o "$filtered_gpa"
-    
-        # Step 1b: Process the filtered GPA file
         python3 "$pan_dir/process_matrix.py" \
             -i "$filtered_gpa" \
             -o "${outdir}/collapsed_matrix.csv" \
             -d "$outdir"
-    
-        matrix="${outdir}/collapsed_matrix.csv"
     fi
-
-    # Step 2: Run PanForest
-    python3 "$pan_dir/PanForest.py" \
-        -n 1000 \
-        -d 16 \
-        -m "$matrix" \
-        -pres 1 \
-        -abs 1 \
-        -o "$outdir"
-
-    echo "Finished ${species_taxid} (${mode})"
 done
+
+# Run PanForest
+for matrix in "$out_base"/*/collapsed_matrix.csv; do
+    species_taxid=$(basename "$(dirname "$matrix")")
+    outdir=$(dirname "$matrix")
+
+    run_cmd() {
+      echo "[$(date +%H:%M:%S)] Starting PanForest for ${species_taxid} (${mode}, scope=${scope})..."
+      NUMBA_NUM_THREADS=24 python3 "$pan_dir/PanForest.py" \
+          "${panforest_args[@]}" \
+          -m "$matrix" \
+          -pres 1 \
+          -abs 1 \
+          -o "$outdir"
+      echo "[$(date +%H:%M:%S)] Finished PanForest for ${species_taxid} (${mode}, scope=${scope})"
+    }
+
+    if [ "$parallel" = true ]; then
+        run_cmd &
+        if (( $(jobs -r | wc -l) >= MAX_JOBS )); then
+            wait -n
+        fi
+    else
+        run_cmd
+    fi
+done
+
+if [ "$parallel" = true ]; then
+    wait
+    echo "All panforest runs completed."
+fi

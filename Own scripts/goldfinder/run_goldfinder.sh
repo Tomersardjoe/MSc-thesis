@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 
-required_env="coinfinder_new"
+required_env="goldfinder"
 if [ "${CONDA_DEFAULT_ENV:-}" != "$required_env" ]; then
     echo "Please activate the '$required_env' environment before running this script."
     exit 1
 fi
 
-# Parse arguments
+# Defaults
 dataset=""
+scope="selected"
+MAX_JOBS=4
+
+# Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -25,8 +29,19 @@ while [[ $# -gt 0 ]]; do
       esac
       shift 2
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <real|perfect|flip>"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -38,10 +53,22 @@ if [ -z "$dataset" ]; then
     exit 1
 fi
 
-# Directories
-tree_dir="real_pangenomes/tree_matches"
-gpa_dir="${dataset}/gpa_matches"
-out_base="${dataset}/coinfinder_runs"
+# Directories depend on scope
+if [ "$scope" = "selected" ]; then
+    tree_dir="real_pangenomes/tree_matches"
+    gpa_dir="${dataset}/gpa_matches"
+    out_base="${dataset}/goldfinder_runs_selected"
+    c_mode="both"
+    parallel=false
+else
+    tree_dir="real_pangenomes/tree_matches_all"
+    gpa_dir="${dataset}/gpa_matches_all"
+    out_base="${dataset}/goldfinder_runs_all"
+    c_mode="association"
+    parallel=true
+fi
+
+gold_dir="goldfinder/goldfinder"
 
 # Safety: bail if directories aren’t found
 for d in "$tree_dir" "$gpa_dir"; do
@@ -53,18 +80,19 @@ done
 
 mkdir -p "$out_base"
 
+# Loop through each tree file
 for tree_file in "$tree_dir"/*.nwk; do
     filename=$(basename "$tree_file")
     basename_noext="${filename%.nwk}"
     species_taxid="${basename_noext#reduced_}"
 
-    gpa_file=$(ls "${gpa_dir}"/*"${species_taxid}"_REDUCED.tab 2>/dev/null | head -n1)
-    if [ ! -f "${gpa_file:-}" ]; then
+    gpa_file=$(ls "${gpa_dir}"/*"${species_taxid}"_REDUCED.csv 2>/dev/null | head -n1)
+    if [ ! -f "$gpa_file" ]; then
         echo "Warning: No GPA file for ${species_taxid}, skipping."
         continue
     fi
 
-    echo "Starting ${species_taxid}..."
+    echo "Starting ${species_taxid} (scope=${scope})..."
 
     outdir="${out_base}/${species_taxid}"
     if [ -d "$outdir" ] && [ "$(ls -A "$outdir")" ]; then
@@ -76,23 +104,29 @@ for tree_file in "$tree_dir"/*.nwk; do
     tree_file="$(realpath "$tree_file")"
     mkdir -p "$outdir"
 
-    fixed_tree="${outdir}/${species_taxid}_fixed.nwk"
-    Rscript -e "
-      suppressMessages(library(ape));
-      tr <- read.tree('$tree_file');
-      tr\$edge.length[tr\$edge.length <= 1e-8] <- 1e-6;
-      write.tree(tr, file='$fixed_tree')
-    "
-
-    (
-      cd "$outdir" || exit
-      NUMBA_NUM_THREADS=24 coinfinder \
+    run_cmd() {
+      NUMBA_NUM_THREADS=24 python3 "$gold_dir/goldfinder.py" \
         -i "$gpa_file" \
-        -p "${species_taxid}_fixed.nwk" \
-        -a \
-        -n \
-        -E
-    )
+        -t "$tree_file" \
+        -o "$outdir" \
+        -g 50000 \
+        -c "$c_mode"
+      echo "Finished ${species_taxid}"
+    }
 
-    echo "Finished ${species_taxid}"
+    if [ "$parallel" = true ]; then
+        run_cmd &
+        # Limit concurrency
+        if (( $(jobs -r | wc -l) >= MAX_JOBS )); then
+            wait -n
+        fi
+    else
+        run_cmd
+    fi
 done
+
+# Wait for all background jobs if parallel
+if [ "$parallel" = true ]; then
+    wait
+    echo "All runs completed."
+fi
