@@ -9,6 +9,8 @@ fi
 # Parse arguments
 dataset=""
 mode="unfiltered"
+scope="selected"   # default
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -29,8 +31,19 @@ while [[ $# -gt 0 ]]; do
       mode="$2"
       shift 2
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <perfect|flip> [--mode <unfiltered|filtered>]"
+      echo "Usage: $0 --dataset <perfect|flip> [--mode <unfiltered|filtered>] [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -43,19 +56,20 @@ fi
 
 gpa_dir="${dataset}/gpa_matches"
 script="scripts/pseudo-sim/dup_match.py"
-summary_file="${dataset}/dup_match_${mode}.tsv"
+summary_file="${dataset}/dup_match_${mode}_${scope}.tsv"
 species_categories_file="real_pangenomes/species_categories.csv"
 
 # Overwrite the summary file
 : > "$summary_file"
 
 run_tool () {
-    local runs_subdir=$1
+    local base_runs_subdir=$1   # e.g. coinfinder_runs, goldfinder_runs, panforest_runs
     local subfolder=$2
+    local runs_subdir="${base_runs_subdir}_${scope}"
     local runs_dir="${dataset}/${runs_subdir}"
 
     # If panforest, include mode
-    if [[ "$runs_subdir" == "panforest_runs" ]]; then
+    if [[ "$base_runs_subdir" == "panforest_runs" ]]; then
         runs_dir="${runs_dir}/${mode}"
     fi
 
@@ -71,11 +85,11 @@ run_tool () {
         return
     fi
 
-    echo "Processing ${runs_subdir} (${subfolder}/${runs_subdir=="panforest_runs" ? " | mode: ${mode}" : ""})"
+    echo "Processing ${runs_subdir} (${subfolder}${base_runs_subdir=="panforest_runs" ? " | mode: ${mode}" : ""})"
 
-    shopt -s nullglob # if no match is found, empty string
+    shopt -s nullglob
     local infiles=( "$runs_dir"/*/${subfolder}/*dvalues_*.csv )
-    shopt -u nullglob # turn off file matcher
+    shopt -u nullglob
 
     local total=${#infiles[@]}
     if (( total == 0 )); then

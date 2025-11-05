@@ -9,6 +9,8 @@ fi
 # Parse arguments
 dataset=""
 mode="unfiltered"
+scope="selected"   # default
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -30,8 +32,19 @@ while [[ $# -gt 0 ]]; do
       mode="$2"
       shift 2
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>]"
+      echo "Usage: $0 --dataset <real|perfect|flip> [--mode <unfiltered|filtered>] [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -47,12 +60,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Top-level output directory under repo root
-base_outdir="${PARENT_DIR}/combined_results/${dataset}_${mode}"
+base_outdir="${PARENT_DIR}/combined_results/${dataset}_${mode}_${scope}"
 mkdir -p "$base_outdir"
 
-coinfinder_dir="$(realpath "${dataset}/coinfinder_runs")"
-goldfinder_dir="$(realpath "${dataset}/goldfinder_runs")"
-panforest_dir="$(realpath "${dataset}/panforest_runs/${mode}")"
+coinfinder_dir="$(realpath "${dataset}/coinfinder_runs_${scope}")"
+goldfinder_dir="$(realpath "${dataset}/goldfinder_runs_${scope}")"
+panforest_dir="$(realpath "${dataset}/panforest_runs_${scope}/${mode}")"
 
 # Safety: bail if directories aren’t found
 for d in "$coinfinder_dir" "$goldfinder_dir" "$panforest_dir"; do
@@ -65,7 +78,7 @@ done
 # Loop through each run_id in coinfinder_runs
 for run_dir in "$coinfinder_dir"/*/; do
     run_id=$(basename "$run_dir")
-    echo "Processing run: $run_id (${mode})"
+    echo "Processing run: $run_id (${mode}, scope=${scope})"
 
     coin_file="${coinfinder_dir}/${run_id}/d_cutoff/coinfinder_dvalues_${run_id}.csv"
     gold_file="${goldfinder_dir}/${run_id}/d_distribution/goldfinder_dvalues_${run_id}.csv"
@@ -115,11 +128,11 @@ for run_dir in "$coinfinder_dir"/*/; do
 
     # If dataset is simulated, require the dup_summary file
     if [[ "$dataset" == simulated_pangenomes_* ]]; then
-        dup_summary_file="$(realpath "${dataset}/dup_match_${mode}.tsv")"
+        dup_summary_file="$(realpath "${dataset}/dup_match_${mode}_${scope}.tsv")"
         if [ -f "$dup_summary_file" ]; then
             cmd+=( "$dup_summary_file" )
         else
-            echo "Error: dup_match_${mode}.tsv not found for dataset $dataset. Exiting."
+            echo "Error: dup_match_${mode}_${scope}.tsv not found for dataset $dataset. Exiting."
             exit 1
         fi
     fi
@@ -131,6 +144,6 @@ for run_dir in "$coinfinder_dir"/*/; do
     echo "  Running comb_plots.R for $run_id..."
     "${cmd[@]}"
 
-    echo "  Finished $run_id (${mode})"
+    echo "  Finished $run_id (${mode}, scope=${scope})"
     echo
 done

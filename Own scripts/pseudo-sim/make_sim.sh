@@ -7,6 +7,8 @@ if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
 fi
 
 dup_mode="perfect"   # default
+scope="selected"     # default
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dup_mode)
@@ -17,14 +19,35 @@ while [[ $# -gt 0 ]]; do
       dup_mode="${1#*=}"
       shift
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
+    --scope=*)
+      scope="${1#*=}"
+      if [[ "$scope" != "selected" && "$scope" != "all" ]]; then
+        echo "Invalid scope: $scope"
+        echo "Allowed values: selected, all"
+        exit 1
+      fi
+      shift
+      ;;
     *)
-      echo "Usage: $0 [--dup_mode <perfect|flip>]"
+      echo "Usage: $0 [--dup_mode <perfect|flip>] [--scope <selected|all>]"
       exit 1
       ;;
   esac
 done
 
-nodes_dir="real_pangenomes/coinfinder_runs"
+# Scope-aware directories
+nodes_dir="real_pangenomes/coinfinder_runs_${scope}"
 gpa_dir="real_pangenomes/gpa_matches"
 script="scripts/pseudo-sim/sim_pan.py"
 out_base="simulated_pangenomes_${dup_mode}"
@@ -41,28 +64,23 @@ mkdir -p "$out_base"
 
 # Loop through each nodes_all.tsv file
 for nodes_file in "$nodes_dir"/*/coincident_nodes_all.tsv; do
-    # Extract species_taxid from parent directory name
     species_taxid=$(basename "$(dirname "$nodes_file")")
 
-    # Find matching GPA file
     gpa_file="$gpa_dir/${species_taxid}_REDUCED.csv"
     if [ ! -f "$gpa_file" ]; then
         echo "Warning: No GPA file for ${species_taxid}, skipping."
         continue
     fi
 
-    echo "Starting ${species_taxid}..."
+    echo "Starting ${species_taxid} (scope=${scope})..."
 
-    # Output directory
     outdir="${out_base}"
     mkdir -p "$outdir/gpa_matches"
 
-    # Absolute paths
     nodes_file="$(realpath "$nodes_file")"
     gpa_file="$(realpath "$gpa_file")"
     outdir="$(realpath "$outdir")"
 
-    # Run simulation script
     python3 "$script" \
         "$nodes_file" \
         "$gpa_file" \

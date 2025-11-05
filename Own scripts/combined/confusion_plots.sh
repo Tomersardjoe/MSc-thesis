@@ -9,6 +9,8 @@ fi
 # Parse arguments
 dataset=""
 mode="unfiltered"
+scope="selected"   # default
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --dataset)
@@ -29,8 +31,19 @@ while [[ $# -gt 0 ]]; do
       mode="$2"
       shift 2
       ;;
+    --scope)
+      case ${2:-} in
+        selected|all) scope="$2" ;;
+        *)
+          echo "Invalid scope: ${2:-<missing>}"
+          echo "Allowed values: selected, all"
+          exit 1
+          ;;
+      esac
+      shift 2
+      ;;
     *)
-      echo "Usage: $0 --dataset <perfect|flip> [--mode <unfiltered|filtered>]"
+      echo "Usage: $0 --dataset <perfect|flip> [--mode <unfiltered|filtered>] [--scope <selected|all>]"
       exit 1
       ;;
   esac
@@ -46,22 +59,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Top-level output directory under repo root
-base_outdir="${PARENT_DIR}/combined_results/${dataset}_${mode}"
+base_outdir="${PARENT_DIR}/combined_results/${dataset}_${mode}_${scope}"
 mkdir -p "$base_outdir"
 
-# Dup summary file
-dup_summary_file="$(realpath "${dataset}/dup_match_${mode}.tsv")"
-  if [ ! -f "$dup_summary_file" ]; then
-    echo "Error: dup_match_${mode}.tsv not found for dataset $dataset. Exiting."
+# Dup summary file (scope-aware)
+dup_summary_file="$(realpath "${dataset}/dup_match_${mode}_${scope}.tsv")"
+if [ ! -f "$dup_summary_file" ]; then
+    echo "Error: dup_match_${mode}_${scope}.tsv not found for dataset $dataset. Exiting."
     exit 1
-  fi
+fi
 
 # Run the R script
-echo "Running confusion_plots_all.R for dataset '$dataset' (mode: $mode)"
+echo "Running confusion_plots_all.R for dataset '$dataset' (mode: $mode, scope: $scope)"
 cmd=( Rscript "$SCRIPT_DIR/confusion_plots_all.R"
       "$dup_summary_file"
       "$base_outdir" )
 
 "${cmd[@]}"
 
-echo "Finished generating confusion plots for dataset '$dataset' (mode: $mode)"
+echo "Finished generating confusion plots for dataset '$dataset' (mode: $mode, scope: $scope)"
