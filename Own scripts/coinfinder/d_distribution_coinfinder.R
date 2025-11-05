@@ -243,7 +243,7 @@ p_hist_pairs <- ggplot(pairs, aes(x = d_pair)) +
     xintercept = cutoff_value,
     linetype = "dashed", color = "#e31a1c", linewidth = 1
   ) +
-    annotate("rect",
+  annotate("rect",
            xmin = cutoff_value, xmax = Inf, ymin = 0, ymax = Inf,
            alpha = 0.1, fill = "#e31a1c") +
   scale_x_continuous(
@@ -255,7 +255,7 @@ p_hist_pairs <- ggplot(pairs, aes(x = d_pair)) +
       " | Gene pairs retained = ", retained_pairs, "/", total_pairs,
       " (", round(pct_retained, 1), "%)"
     ),
-    x = "D-value (min of source & target)",
+    x = "D-value",
     y = "Pair count"
   ) +
   coord_cartesian(xlim = c(-5, 5)) +
@@ -356,7 +356,7 @@ p_curve <- ggplot(df_counts, aes(x = cutoff, y = pairs)) +
            label = paste0("Cut-off = ", signif(cutoff_value, 3)), 
            hjust = -0.1, vjust = 1.5, color = "#e31a1c") +
   labs(
-    title = "Pairs retained vs. D-value cutoff",
+    title = paste("Pairs retained vs. D-value cutoff -", unique_id),
     subtitle = paste0("D-value cutoff = ", round(cutoff_value, 3),
       " | Gene pairs retained = ", retained_pairs, "/", total_pairs,
       " (", round(pct_retained, 1), "%)"
@@ -370,9 +370,127 @@ ggsave(file.path(out_dir, paste0("d_distribution_pairs_curve_", unique_id, ".png
        plot = p_curve, width = 8, height = 6, dpi = 300, bg = "white")
 
 # -------------------------
-# Write output data for comparative plots
+# D-value cutoff heatmap
 # -------------------------
 
+# Load tree
+tree <- read.tree(tree_path)
+
+# Load presence/absence matrix
+pa_raw <- read_csv(pa_path, show_col_types = FALSE, name_repair = "minimal")
+
+gene_ids <- pa_raw[[1]]
+pa_vals  <- as.matrix(pa_raw[,-1])
+mode(pa_vals) <- "numeric"
+
+genome_ids <- colnames(pa_raw)[-1]
+rownames(pa_vals) <- gene_ids
+colnames(pa_vals) <- genome_ids
+
+# Transpose so rows = genomes, cols = genes
+pa_mat <- t(pa_vals)
+
+# Align genomes to the tree tip order
+keep_genomes <- intersect(rownames(pa_mat), tree$tip.label)
+pa_mat <- pa_mat[keep_genomes, , drop = FALSE]
+pa_mat <- pa_mat[tree$tip.label, , drop = FALSE]
+
+# Restrict pa_mat to the genes that have D-values
+ordered_genes <- intersect(nodes$ID, colnames(pa_mat))
+pa_mat <- pa_mat[tree$tip.label, ordered_genes, drop = FALSE]
+
+# Define spread score helper
+get_spread_score <- function(vec) {
+  sum(diff(as.numeric(vec)) != 0)
+}
+
+# Compute spread scores
+spread_scores <- apply(pa_mat, 2, get_spread_score)
+
+# Join back into nodes
+nodes <- nodes %>%
+  left_join(
+    data.frame(ID = names(spread_scores),
+               spread_score = spread_scores),
+    by = "ID"
+  )
+
+# Restrict to genes near the cutoff
+margin <- 0.14
+near_cutoff <- nodes %>%
+  filter(Result > (cutoff_value - margin), Result < (cutoff_value + margin))
+
+# Pick one clumped gene below cutoff
+gene_lowD <- near_cutoff %>%
+  filter(Result < cutoff_value) %>%
+  arrange(spread_score) %>%
+  slice(15) %>%
+  pull(ID)
+
+# Pick one spread gene above cutoff
+gene_highD <- near_cutoff %>%
+  filter(Result > cutoff_value) %>%
+  arrange(desc(spread_score)) %>%
+  slice(1) %>%
+  pull(ID)
+
+cat("Chosen below-cutoff gene:", gene_lowD,
+    "D =", nodes$Result[nodes$ID == gene_lowD], "\n")
+cat("Chosen above-cutoff gene:", gene_highD,
+    "D =", nodes$Result[nodes$ID == gene_highD], "\n")
+
+# Build tidy data frames with .id column = tip labels
+df_low <- data.frame(
+  .id   = rownames(pa_mat),
+  value = as.character(pa_mat[, gene_lowD])
+)
+
+df_high <- data.frame(
+  .id   = rownames(pa_mat),
+  value = as.character(pa_mat[, gene_highD])
+)
+
+# Labels with D-values
+panel_low  <- paste0(gene_lowD,  " (D=", round(nodes$Result[nodes$ID == gene_lowD], 3), ")")
+panel_high <- paste0(gene_highD, " (D=", round(nodes$Result[nodes$ID == gene_highD], 3), ")")
+
+# Base tree
+p_tree2 <- ggtree(tree)
+
+# Add each gene as its own facet panel
+two_gene_plot <- facet_plot(p_tree2, panel = panel_low,
+                            data = df_low,
+                            geom = geom_tile,
+                            mapping = aes(x = 1, fill = value),
+                            color = "white", size = 1.5)
+
+two_gene_plot <- facet_plot(two_gene_plot, panel = panel_high,
+                            data = df_high,
+                            geom = geom_tile,
+                            mapping = aes(x = 1, fill = value),
+                            color = "white", size = 1.5) +
+  scale_fill_manual(values = c("0" = "white", "1" = "black")) +
+  labs(
+    title = paste("Gene distribution patterns above and below D-value cutoff -", unique_id),
+    subtitle = paste("D-value cutoff =", round(cutoff_value, 3), 
+                     "| example genes below and above the D-value cutoff")
+  ) +
+  theme(legend.position = "none")
+
+# Save
+outfile2 <- file.path(out_dir, paste0("gene_distribution_heatmap_", unique_id, ".png"))
+ggsave(outfile2, plot = two_gene_plot, width = 8, height = 6)
+
+# Combined plot of cutoff, elbow and heatmap
+combined_plot <- (p_d_cutoff | p_hist_pairs) / (p_curve | two_gene_plot)
+
+# Save to file
+outfile <- file.path(out_dir, paste0("d_combined_", unique_id, ".png"))
+ggsave(outfile, combined_plot, width = 14, height = 10)
+
+# -------------------------
+# Write output data for comparative plots
+# -------------------------
 # Gene-level data: keep only genes above cutoff
 df_genes <- nodes %>%
   filter(!is.na(Result), Result >= cutoff_value) %>%
