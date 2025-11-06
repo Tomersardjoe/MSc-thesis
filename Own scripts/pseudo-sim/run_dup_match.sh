@@ -54,16 +54,23 @@ if [ -z "$dataset" ]; then
     exit 1
 fi
 
-gpa_dir="${dataset}/gpa_matches"
+# Paths
+if [ "$scope" = "all" ]; then
+    gpa_dir="${dataset}/gpa_matches_all"
+    summary_file="${dataset}/${dataset}_dup_match_${mode}_all.tsv"
+else
+    gpa_dir="${dataset}/gpa_matches"
+    summary_file="${dataset}/${dataset}_dup_match_${mode}_selected.tsv"
+fi
+
 script="scripts/pseudo-sim/dup_match.py"
-summary_file="${dataset}/dup_match_${mode}_${scope}.tsv"
 species_categories_file="real_pangenomes/species_categories.csv"
 
 # Overwrite the summary file
 : > "$summary_file"
 
 run_tool () {
-    local base_runs_subdir=$1   # e.g. coinfinder_runs, goldfinder_runs, panforest_runs
+    local base_runs_subdir=$1
     local subfolder=$2
     local runs_subdir="${base_runs_subdir}_${scope}"
     local runs_dir="${dataset}/${runs_subdir}"

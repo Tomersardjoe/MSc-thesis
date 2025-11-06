@@ -565,8 +565,23 @@ if (!is.null(dup_summary_path) && file.exists(dup_summary_path)) {
       )
     )
 
-  if (nrow(dup_summary_run) > 0) {
-    # Ensure all three tools present for summary-driven panels
+  # Check all three required conditions
+  if (nrow(dup_summary_run) == 0) {
+    message("No matching pangenome_id found in summary file for ", unique_id)
+  }
+  if (nrow(df_dup_gene) == 0) {
+    message("No duplicated genes found for ", unique_id, " - skipping gene relative panels.")
+  }
+  if (nrow(df_dup_pairs_upset) == 0) {
+    message("No duplicated pairs found for ", unique_id, " - skipping pair relative panels.")
+  }
+
+  # Only proceed if all three are non-empty
+  if (nrow(dup_summary_run) > 0 &&
+      nrow(df_dup_gene) > 0 &&
+      nrow(df_dup_pairs_upset) > 0) {
+
+    # Ensure all tools present
     all_tools_tbl <- tibble::tibble(tool = names(method_colors))
     dup_summary_run <- all_tools_tbl %>%
       dplyr::left_join(dup_summary_run, by = "tool") %>%
@@ -575,7 +590,7 @@ if (!is.null(dup_summary_path) && file.exists(dup_summary_path)) {
         tool = factor(tool, levels = names(method_colors))
       )
 
-    # Panel 1: from summary file (duplicate_found_pct)
+    # Panel 1: summary file
     df_panel1 <- dup_summary_run %>%
       dplyr::transmute(
         Method = tool,
@@ -583,9 +598,8 @@ if (!is.null(dup_summary_path) && file.exists(dup_summary_path)) {
         panel  = "Relative duplicate gene counts vs all duplicated genes"
       )
 
-    # Panel 2: computed from df_all (dup / total genes)
+    # Panel 2: computed from df_all
     df_genes_all <- df_all %>% dplyr::filter(Level == "Gene")
-
     df_panel2 <- make_relative_counts(df_genes_all, Gene,
                                       "Relative duplicate gene counts vs all genes",
                                       method_colors) %>%
@@ -611,7 +625,7 @@ if (!is.null(dup_summary_path) && file.exists(dup_summary_path)) {
                        method_colors, out_dir,
                        facet_cols = ~panel)
 
-    # Pair-level relative panel from summary (dup_as_pct_of_pairs)
+    # Pair-level relative panel
     df_panel_pairs <- dup_summary_run %>%
       dplyr::transmute(
         Method = tool,
@@ -634,21 +648,16 @@ if (!is.null(dup_summary_path) && file.exists(dup_summary_path)) {
 
     # Precision/Recall/F1
     make_metrics_plot(dup_summary_run, method_colors, unique_id, out_dir)
-
-  } else {
-    message("No matching pangenome_id found in summary file for ", unique_id)
   }
+
+  # Always compute bin metrics regardless
+  total_dups <- sum(pairs_df$PairType == "Correct_dup_pair")
+  bin_metrics <- compute_bin_metrics(pairs_df,
+                                     binwidth = 0.25,
+                                     d_cutoff = dcutoff_value,
+                                     total_dups = total_dups)
+  plot_bin_metrics(bin_metrics, method_colors, unique_id, out_dir)
 }
-
-# Count all Correct_dup_pairs in pairs_df
-total_dups <- sum(pairs_df$PairType == "Correct_dup_pair")
-
-bin_metrics <- compute_bin_metrics(pairs_df,
-                                   binwidth = 0.25,
-                                   d_cutoff = dcutoff_value,
-                                   total_dups = total_dups)
-
-plot_bin_metrics(bin_metrics, method_colors, unique_id, out_dir)
 
 # -------------------------
 # Combined histograms + boxplots (unfiltered and filtered)

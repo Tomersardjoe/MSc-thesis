@@ -58,9 +58,10 @@ fi
 # Locate directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+ROOT_DIR="$(dirname "$PARENT_DIR")"
 
 # Top-level output directory under repo root
-base_outdir="${PARENT_DIR}/combined_results/${dataset}_${mode}_${scope}"
+base_outdir="${ROOT_DIR}/combined_results/${dataset}_${mode}_${scope}"
 mkdir -p "$base_outdir"
 
 coinfinder_dir="$(realpath "${dataset}/coinfinder_runs_${scope}")"
@@ -104,8 +105,8 @@ for run_dir in "$coinfinder_dir"/*/; do
     
     # If all three missing, bail
     if [ $count -eq 0 ]; then
-        echo "Error: all three files are missing for $run_id. Exiting."
-        exit 1
+        echo "Error: all three files are missing for $run_id. Skipping."
+        continue
     fi
     
     # In perfect dataset, if only PanForest is present, bail

@@ -60,7 +60,7 @@ coinfinder_dir="$(realpath "${dataset}/coinfinder_runs_${scope}")"
 
 # Choose GPA directory based on scope (not directly used here, but consistent)
 if [ "$scope" = "all" ]; then
-    gpa_dir="$(realpath "${dataset}/gpa_matches_all_not_pruned")"
+    gpa_dir="$(realpath "${dataset}/gpa_matches_all")"
 else
     gpa_dir="$(realpath "${dataset}/gpa_matches")"
 fi

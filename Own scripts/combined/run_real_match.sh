@@ -51,10 +51,16 @@ if [ -z "$dataset" ]; then
 fi
 
 # Paths
-gpa_dir="${dataset}/gpa_matches_all_not_pruned"
+if [ "$scope" = "all" ]; then
+    gpa_dir="${dataset}/gpa_matches_all"
+    match_file="${dataset}/matched_all.csv"
+else
+    gpa_dir="${dataset}/gpa_matches"
+    match_file="${dataset}/matched_selected.csv"
+fi
+
 script="scripts/combined/real_match.py"
-summary_file="${dataset}/real_match_${mode}_${scope}.tsv"
-match_file="real_pangenomes/matched_all.csv"
+summary_file="${dataset}/${dataset}_match_${mode}_${scope}.tsv"
 
 # Safety checks
 if [ ! -d "$gpa_dir" ]; then
