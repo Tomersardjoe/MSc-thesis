@@ -129,11 +129,11 @@ for run_dir in "$coinfinder_dir"/*/; do
 
     # If dataset is simulated, require the dup_summary file
     if [[ "$dataset" == simulated_pangenomes_* ]]; then
-        dup_summary_file="$(realpath "${dataset}/dup_match_${mode}_${scope}.tsv")"
+        dup_summary_file="$(realpath "${dataset}/${dataset}_dup_match_${mode}_${scope}.tsv")"
         if [ -f "$dup_summary_file" ]; then
             cmd+=( "$dup_summary_file" )
         else
-            echo "Error: dup_match_${mode}_${scope}.tsv not found for dataset $dataset. Exiting."
+            echo "Error:${dataset}/${dataset}_dup_match_${mode}_${scope}.tsv not found for dataset $dataset. Exiting."
             exit 1
         fi
     fi
