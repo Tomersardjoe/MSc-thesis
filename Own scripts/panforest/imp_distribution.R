@@ -27,9 +27,8 @@ annotate_outliers <- function(plot, n_low, n_high, label_prefix = "genes") {
 }
 
 make_subtitle <- function(stage, entity,
-                          counts_q3, totals_q3,
-                          counts_elbow, totals_elbow,
-                          cutoffs_q3, cutoffs_elbow) {
+                          counts, totals,
+                          cutoffs) {
   format_cutoff <- function(val) {
     if (is.numeric(val) && length(val) == 1) {
       round(val, 2)
@@ -41,35 +40,24 @@ make_subtitle <- function(stage, entity,
   }
 
   # Q3 line
-  retained_q3 <- counts_q3[[stage]][[entity]]
-  total_q3    <- totals_q3[[stage]][[entity]]
-  pct_q3      <- if (!is.na(total_q3) && total_q3 > 0) round(100 * retained_q3 / total_q3, 1) else NA
-  cutoff_q3   <- format_cutoff(cutoffs_q3[[stage]]$value)
+  retained <- counts[[stage]][[entity]]
+  total    <- totals[[stage]][[entity]]
+  pct      <- if (!is.na(total) && total > 0) round(100 * retained / total, 1) else NA
+  cutoff   <- format_cutoff(cutoffs[[stage]]$value)
 
-  line_q3 <- paste0("Q3 ", cutoffs_q3[[stage]]$label, " cutoff = ", cutoff_q3, "\n",
+  line_Q3 <- paste0("Q3 ", cutoffs[[stage]]$label, " cutoff = ", cutoff, "\n",
                     toupper(substr(entity,1,1)), substr(entity,2,nchar(entity)),
-                    " retained = ", retained_q3, "/", total_q3,
-                    if (!is.na(pct_q3)) paste0(" (", pct_q3, "%)") else "")
+                    " retained = ", retained, "/", total,
+                    if (!is.na(pct)) paste0(" (", pct, "%)") else "")
 
-  # Elbow line
-  retained_elbow <- counts_elbow[[stage]][[entity]]
-  total_elbow    <- totals_elbow[[stage]][[entity]]
-  pct_elbow      <- if (!is.na(total_elbow) && total_elbow > 0) round(100 * retained_elbow / total_elbow, 1) else NA
-  cutoff_elbow   <- format_cutoff(cutoffs_elbow[[stage]]$value)
-
-  line_elbow <- paste0("Elbow ", cutoffs_elbow[[stage]]$label, " cutoff = ", cutoff_elbow, "\n",
-                       toupper(substr(entity,1,1)), substr(entity,2,nchar(entity)),
-                       " retained = ", retained_elbow, "/", total_elbow,
-                       if (!is.na(pct_elbow)) paste0(" (", pct_elbow, "%)") else "")
-
-  paste(line_q3, line_elbow, sep = "\n\n")
+  return(line_Q3)
 }
 
 make_hist <- function(df, subtitle, title, label_prefix, cutoff_df, dcutoff_value) {
   n_low  <- sum(df$D_value < -5, na.rm = TRUE)
   n_high <- sum(df$D_value >  5, na.rm = TRUE)
 
-  fill_col  <- ifelse(label_prefix == "genes", "#6baed6", "#fdae6b")
+  fill_col   <- ifelse(label_prefix == "genes", "#6baed6", "#fdae6b")
   border_col <- ifelse(label_prefix == "genes", "#08519c", "#e6550d")
 
   p <- ggplot(df, aes(x = D_value)) +
@@ -79,26 +67,20 @@ make_hist <- function(df, subtitle, title, label_prefix, cutoff_df, dcutoff_valu
                aes(xintercept = cutoff, color = Stat, linetype = Stat),
                linewidth = 1) +
     scale_color_manual(
-      values = c("Elbow"="#e31a1c","Q3"="#450808"),
-      labels = c(
-        paste0("Elbow (", round(elbow_dcutoff, 2), ")"),
-        paste0("Q3 (", round(dcutoff_value, 2), ")")
-      )
+      values = c("Q3" = "#450808"),
+      labels = c(paste0("Q3 (", round(dcutoff_value, 2), ")"))
     ) +
     scale_linetype_manual(
-      values = c("Elbow"="dashed","Q3"="dotted"),
-      labels = c(
-        paste0("Elbow (", round(elbow_dcutoff, 2), ")"),
-        paste0("Q3 (", round(dcutoff_value, 2), ")")
-      )
+      values = c("Q3" = "dotted"),
+      labels = c(paste0("Q3 (", round(dcutoff_value, 2), ")"))
     ) +
-    scale_x_continuous(breaks = seq(-5,5,1)) +
+    scale_x_continuous(breaks = seq(-5, 5, 1)) +
     labs(title = title, subtitle = subtitle,
          x = "D-value", y = paste0(toupper(substr(label_prefix,1,1)),
                                    substr(label_prefix,2,nchar(label_prefix)),
                                    " count"),
          color = "Cutoff type", linetype = "Cutoff type") +
-    coord_cartesian(xlim = c(-5,5)) +
+    coord_cartesian(xlim = c(-5, 5)) +
     theme_minimal()
 
   annotate_outliers(p, n_low, n_high, label_prefix)
@@ -626,12 +608,12 @@ totals_elbow <- list(
 
 for (stage in names(dfs)) {
   p_genes <- make_hist(dfs[[stage]]$genes,
-                       make_subtitle(stage, "genes", counts, totals, counts_elbow, totals_elbow, cutoffs, cutoffs_elbow),
+                       make_subtitle(stage, "genes", counts, totals, cutoffs),
                        paste("Distribution of gene D-values -", unique_id),
                        "genes", cutoff_df, dcutoff_value)
 
   p_pairs <- make_hist(dfs[[stage]]$pairs,
-                       make_subtitle(stage, "pairs", counts, totals, counts_elbow, totals_elbow, cutoffs, cutoffs_elbow),
+                       make_subtitle(stage, "pairs", counts, totals, cutoffs),
                        paste("Distribution of gene pairs D-values -", unique_id),
                        "pairs", cutoff_df, dcutoff_value)
 
