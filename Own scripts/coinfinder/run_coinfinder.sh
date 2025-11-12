@@ -63,7 +63,7 @@ else
     tree_dir="real_pangenomes/tree_matches_all"
     gpa_dir="${dataset}/gpa_matches_all"
     out_base="${dataset}/coinfinder_runs_all"
-    extra_args=(-x 4)
+    extra_args=()
     parallel=true
 fi
 
@@ -98,6 +98,7 @@ for tree_file in "$tree_dir"/*.nwk; do
 done
 
 # Run Coinfinder
+count=0
 for fixed_tree in "$out_base"/*/*_fixed.nwk; do
     species_taxid=$(basename "$fixed_tree" _fixed.nwk)
     outdir=$(dirname "$fixed_tree")
@@ -120,11 +121,11 @@ for fixed_tree in "$out_base"/*/*_fixed.nwk; do
       echo "[$(date +%H:%M:%S)] Starting Coinfinder for ${species_taxid} (scope=${scope})..."
       (
         cd "$outdir" || exit
-        coinfinder \
+        nice -n 10 coinfinder \
           -i "$gpa_file" \
           -p "$fixed_tree_abs" \
           -a \
-          -x 4 \
+          -x 1 \
           -n \
           -E \
           "${extra_args[@]}"
@@ -135,12 +136,11 @@ for fixed_tree in "$out_base"/*/*_fixed.nwk; do
 
     if [ "$parallel" = true ]; then
         run_cmd &
-        if (( $(jobs -r | wc -l) >= MAX_JOBS )); then
-            wait -n
-        fi
+        ((++count % MAX_JOBS == 0)) && wait
     else
         run_cmd
     fi
+
 done
 
 if [ "$parallel" = true ]; then
