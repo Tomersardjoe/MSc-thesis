@@ -109,20 +109,22 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir, s
     TRIPLE_WHITE = "#FFFFFF"
   )
 
-  df2 <- df2 %>%
-    dplyr::mutate(
-      base_tool    = factor(base_tool, levels = names(method_colors)),
-      overlay_tool = factor(overlay_tool, levels = c(names(method_colors), "TRIPLE_WHITE")),
-      pattern      = factor(pattern, levels = c("none","stripe","crosshatch"))
-    )
+df2 <- df2 %>%
+  dplyr::mutate(
+    base_tool    = factor(base_tool, levels = names(method_colors)),
+    overlay_tool = factor(overlay_tool, levels = c(names(method_colors), "TRIPLE_WHITE")),
+    pattern      = factor(pattern, levels = c("none","stripe","crosshatch")),
+    sets         = lapply(sets, function(x) factor(x,
+                          levels = c("Coinfinder","Goldfinder","PanForest")))
+  )
 
   p <- ggplot(df2, aes(x = sets, y = value)) +
     geom_col(aes(fill = base_tool), colour = "black", linewidth = 0.2, width = 0.7, show.legend = c(fill = TRUE)) +
     geom_col(data = dplyr::filter(df2, n_sets == 3), aes(y = value),
-             fill = "#999999", colour = "black", width = 0.7, show.legend = FALSE) +
+             fill = "#999999", colour = NA, width = 0.7, show.legend = FALSE) +
     geom_col_pattern(
       aes(pattern = pattern, pattern_fill = overlay_tool),
-      fill = NA, colour = "black", pattern_colour = "black",
+      fill = NA, colour = NA, pattern_colour = "black",
       linewidth = 0.2, width = 0.7, pattern_size = 0.2,
       show.legend = c(pattern = show_pattern_legend, pattern_fill = FALSE, fill = FALSE),
       key_glyph = ggpattern::draw_key_polygon_pattern,
@@ -131,7 +133,7 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir, s
     geom_label(aes(y = value, label = value),
                vjust = -0.3, size = 3, label.size = 0, fill = "white") +
     scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
-    scale_x_upset(order_by = "degree") +
+    scale_x_upset(order_by = "degree", sets = c("Coinfinder","Goldfinder","PanForest")) +
     scale_fill_manual(name = "Method", values = method_colors, limits = names(method_colors),
                       breaks = names(method_colors), drop = FALSE) +
     scale_pattern_manual(values = c(none = "none", stripe = "stripe", crosshatch = "crosshatch"), guide = "none") +
@@ -142,7 +144,7 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir, s
       combmatrix.panel.point.size = 1.5,
       combmatrix.panel.line.size  = 0.3
     ) +
-    theme(legend.key = element_rect(fill = "white", colour = NA))
+    theme(plot.title = element_text(size = 8))
     
   return(p)
 }
@@ -250,7 +252,7 @@ for (cat in unique(all_runs$category)) {
   df_gene <- make_upset_df(df_cat %>% dplyr::filter(Level == "Gene"),
                            id_col = Gene, filter_expr = TRUE, method_order = set_order)
   p_gene <- make_upset_plot(df_gene,
-                            NULL,
+                            paste("Gene counts -", cat, "pangenomes"),
                             NULL,
                             paste0(cat, "_upset_genes.png"),
                             method_colors, out_dir)
@@ -261,7 +263,7 @@ for (cat in unique(all_runs$category)) {
   pairs_df <- prepare_pairs_df(df_cat)
   df_pairs <- make_upset_df(pairs_df, id_col = PairID, filter_expr = TRUE, method_order = set_order)
   p_pair <- make_upset_plot(df_pairs,
-                            NULL,
+                            paste("Pair counts -", cat, "pangenomes"),
                             NULL,
                             paste0(cat, "_upset_pairs.png"),
                             method_colors, out_dir)
@@ -278,19 +280,17 @@ prop_df <- all_runs %>%
   group_by(category) %>%
   summarise(prop_all_three = mean(overlap))
 
-p_gene_prop <- ggplot(prop_df, aes(x = category, y = prop_all_three, fill = category)) +
-  geom_col(colour = "black", linewidth = 0.2, width = 0.7, show.legend = TRUE) +
-
+p_gene_prop <- ggplot(prop_df, aes(x = category, y = prop_all_three)) +
+  geom_col(fill = prop_colors[prop_df$category],
+           colour = "black", linewidth = 0.2, width = 0.7) +
   geom_label(aes(label = scales::percent(prop_all_three, accuracy = 0.1)),
              vjust = -0.3, size = 3, label.size = 0, fill = "white") +
+  scale_x_discrete(labels = stringr::str_to_title) +
   scale_y_continuous(labels = scales::percent_format(),
                      expand = expansion(mult = c(0, 0.2))) +
-  scale_fill_manual(values = prop_colors) +
-  labs(title = NULL, y = NULL, x = NULL) +
+  labs(title = "Shared gene proportion of its category gene pool", y = NULL, x = NULL) +
   theme_minimal() +
-  theme(
-    legend.key = element_rect(fill = "white", colour = NA)
-  )
+  theme(plot.title = element_text(size = 8))
 
 # Combine into a facetted figure
 combined <- (p_gene_closed | p_gene_moderate) /
@@ -298,10 +298,11 @@ combined <- (p_gene_closed | p_gene_moderate) /
 
 final_plot <- combined + plot_layout(guides = "collect", heights = c(1, 1))
   
-final_plot <- final_plot + plot_annotation(
-                                tag_levels = "A",
-                                title = "Agreement plots co-occurring genes per category"
-                                )
+final_plot <- final_plot + plot_annotation(tag_levels = "A")
 
 ggsave(file.path(out_dir, "gene_category.png"), final_plot,
        width = 8, height = 5, dpi = 600, bg = "white")
+
+# Save as PDF
+ggsave(file.path(out_dir, "gene_category.pdf"), final_plot,
+       width = 8, height = 5, bg = "white")
