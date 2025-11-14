@@ -95,3 +95,4 @@ cmd=( Rscript "$SCRIPT_DIR/aggregated_upset.R" \
 "${cmd[@]}"
 
 echo "Finished generating aggregated UpSet plots for dataset '$dataset' (mode: $mode, scope: $scope)"
+echo "Output files created in $base_outdir"

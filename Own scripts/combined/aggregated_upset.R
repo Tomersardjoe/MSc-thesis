@@ -4,6 +4,7 @@ suppressPackageStartupMessages({
   library(ggplot2)
   library(ggupset)
   library(ggpattern)
+  library(ggpubr)
   library(patchwork)
   library(readr)
   library(dplyr)
@@ -28,6 +29,7 @@ classify_overlap <- function(methods) {
 }
 
 # Safe loader for D-value CSVs
+message("Safe loading D-value CSVs - Do not worry if files are missing! This is most likely due to a tool not having produced significant results (always check). This is expected and does not break the script.")
 safe_read <- function(path, method_name) {
   if (!is.null(path) && file.exists(path)) {
     readr::read_csv(path, show_col_types = FALSE) %>%
@@ -132,7 +134,7 @@ df2 <- df2 %>%
     ) +
     geom_label(aes(y = value, label = value),
                vjust = -0.3, size = 3, label.size = 0, fill = "white") +
-    scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+    scale_y_continuous(expand = expansion(mult = c(0, 0.2)), labels = scales::label_number()) +
     scale_x_upset(order_by = "degree", sets = c("Coinfinder","Goldfinder","PanForest")) +
     scale_fill_manual(name = "Method", values = method_colors, limits = names(method_colors),
                       breaks = names(method_colors), drop = FALSE) +
@@ -280,11 +282,111 @@ prop_df <- all_runs %>%
   group_by(category) %>%
   summarise(prop_all_three = mean(overlap))
 
+# Statistics
+
+# Build contingency table
+gene_cont_table <- all_runs %>%
+  filter(Level == "Gene") %>%
+  group_by(category, Gene) %>%
+  summarise(methods = list(unique(Method)), .groups = "drop") %>%
+  mutate(overlap = purrr::map_lgl(methods,
+                                  ~ setequal(.x, c("Coinfinder","Goldfinder","PanForest")))) %>%
+  group_by(category) %>%
+  summarise(
+    n_all_three_genes = sum(overlap),
+    n_total_genes     = n(),
+    .groups = "drop"
+  ) %>%
+  mutate(n_not_all_three = n_total_genes - n_all_three_genes) %>%
+  select(category, n_all_three_genes, n_not_all_three)
+
+# Convert to matrix
+gene_cont_table <- as.matrix(gene_cont_table[, -1])
+rownames(gene_cont_table) <- all_runs %>%
+  filter(Level == "Gene") %>%
+  pull(category) %>%
+  unique()
+  
+# Global chi-squared test
+chisq_gene <- chisq.test(gene_cont_table)
+
+cat(sprintf(
+  "The shared gene proportions%s differ significantly (p %s)\n",
+  ifelse(chisq_gene$p.value < 0.05, "", "do not"),
+  ifelse(chisq_gene$p.value < 0.0001,
+        "< 0.0001",
+        sprintf("- %.4f", chisq_gene$p.value))
+))
+
+# Pairwise Fisher's exact test
+gene_categories <- rownames(gene_cont_table)
+gene_results <- data.frame(
+  category1 = character(),
+  category2 = character(),
+  p_value   = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (i in 1:(length(gene_categories)-1)) {
+  for (j in (i+1):length(gene_categories)) {
+    sub_table <- gene_cont_table[c(i,j), ]
+    test <- fisher.test(sub_table)
+    gene_results <- rbind(gene_results, data.frame(
+      category1 = gene_categories[i],
+      category2 = gene_categories[j],
+      p_value   = test$p.value
+    ))
+  }
+}
+
+gene_results <- gene_results %>%
+  mutate(signif = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01  ~ "**",
+    p_value < 0.05  ~ "*",
+    TRUE            ~ "ns"
+  ))
+
+# Save as TSV
+write.table(gene_results,
+            file = file.path(out_dir, "gene_pairwise_fisher.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+gene_overall_mean <- sum(gene_cont_table[, "n_all_three_genes"]) /
+                     sum(rowSums(gene_cont_table))
+
+# Category prop test vs overall mean
+gene_category_tests <- data.frame(
+  category = rownames(gene_cont_table),
+  n_all_three_genes = gene_cont_table[, "n_all_three_genes"],
+  n_total_genes = rowSums(gene_cont_table)
+) %>%
+  rowwise() %>%
+  mutate(
+    p_value = prop.test(
+      x = n_all_three_genes,
+      n = n_total_genes,
+      p = gene_overall_mean
+    )$p.value
+  ) %>%
+  mutate(
+    signif = case_when(
+      p_value < 0.001 ~ "***",
+      p_value < 0.01  ~ "**",
+      p_value < 0.05  ~ "*",
+      TRUE            ~ "ns"
+    )
+  )
+
+# Gene plot
 p_gene_prop <- ggplot(prop_df, aes(x = category, y = prop_all_three)) +
   geom_col(fill = prop_colors[prop_df$category],
            colour = "black", linewidth = 0.2, width = 0.7) +
   geom_label(aes(label = scales::percent(prop_all_three, accuracy = 0.1)),
              vjust = -0.3, size = 3, label.size = 0, fill = "white") +
+  geom_text(data = gene_category_tests,
+            aes(x = category, y = (n_all_three_genes / n_total_genes) + 0.05, label = signif),
+            inherit.aes = FALSE, size = 3) +
   scale_x_discrete(labels = stringr::str_to_title) +
   scale_y_continuous(labels = scales::percent_format(),
                      expand = expansion(mult = c(0, 0.2))) +
@@ -305,4 +407,131 @@ ggsave(file.path(out_dir, "gene_category.png"), final_plot,
 
 # Save as PDF
 ggsave(file.path(out_dir, "gene_category.pdf"), final_plot,
+       width = 8, height = 5, bg = "white")
+
+# Proportion of all three tool agreement to total pair pool of each category
+prop_pair_df <- all_runs %>%
+  filter(Level == "Pair") %>%
+  mutate(
+    Pair_norm = purrr::map_chr(strsplit(Pair, "_"),
+                               ~ paste(sort(.x), collapse = "_"))
+  ) %>%
+  group_by(category, Pair_norm) %>%
+  summarise(methods = list(unique(Method)), .groups = "drop") %>%
+  mutate(overlap = purrr::map_lgl(
+    methods,
+    ~ all(c("Coinfinder","Goldfinder","PanForest") %in% .x)
+  )) %>%
+  group_by(category) %>%
+  summarise(
+    prop_all_three_pairs = mean(overlap),
+    n_all_three_pairs    = sum(overlap),
+    n_total_pairs        = n()
+  )
+
+# Statistics
+
+# Build contingency table
+pair_cont_table <- prop_pair_df %>%
+  mutate(n_not_all_three = n_total_pairs - n_all_three_pairs) %>%
+  select(category, n_all_three_pairs, n_not_all_three)
+
+pair_cont_table <- as.matrix(pair_cont_table[, -1])
+rownames(pair_cont_table) <- prop_pair_df$category
+
+# Global chi-squared test
+chisq_pair <- chisq.test(pair_cont_table)
+
+cat(sprintf(
+  "The shared pair proportions%s differ significantly (p %s)\n",
+  ifelse(chisq_pair$p.value < 0.05, "", "do not"),
+  ifelse(chisq_pair$p.value < 0.0001,
+         "< 0.0001",
+         sprintf("= %.4f", chisq_pair$p.value))
+))
+
+# Pairwise Fisher's exact test
+categories <- rownames(pair_cont_table)
+results <- data.frame(
+  category1 = character(),
+  category2 = character(),
+  p_value   = numeric(),
+  stringsAsFactors = FALSE
+)
+
+for (i in 1:(length(categories)-1)) {
+  for (j in (i+1):length(categories)) {
+    sub_table <- pair_cont_table[c(i,j), ]
+    test <- fisher.test(sub_table)
+    results <- rbind(results, data.frame(
+      category1 = categories[i],
+      category2 = categories[j],
+      p_value   = test$p.value
+    ))
+  }
+}
+
+results <- results %>%
+  mutate(signif = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01  ~ "**",
+    p_value < 0.05  ~ "*",
+    TRUE            ~ "ns"
+  ))
+
+write.table(results,
+            file = file.path(out_dir, "pair_pairwise_fisher.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+# Category prop test vs overall mean
+overall_mean <- sum(prop_pair_df$n_all_three_pairs) / sum(prop_pair_df$n_total_pairs)
+
+category_tests <- prop_pair_df %>%
+  rowwise() %>%
+  mutate(
+    p_value = prop.test(
+      x = n_all_three_pairs,
+      n = n_total_pairs,
+      p = overall_mean
+    )$p.value
+  )
+
+category_tests <- category_tests %>%
+  mutate(
+    signif = case_when(
+      p_value < 0.001 ~ "***",
+      p_value < 0.01  ~ "**",
+      p_value < 0.05  ~ "*",
+      TRUE            ~ "ns"
+    )
+  )
+
+# Pair plot
+p_pair_prop <- ggplot(prop_pair_df, aes(x = category, y = prop_all_three_pairs)) +
+  geom_col(fill = prop_colors[prop_pair_df$category],
+           colour = "black", linewidth = 0.2, width = 0.7) +
+  geom_label(aes(label = scales::percent(prop_all_three_pairs, accuracy = 0.001)),
+             vjust = -0.3, size = 3, label.size = 0, fill = "white") +
+  geom_text(data = category_tests,
+            aes(x = category, y = prop_all_three_pairs + 0.01, label = signif),
+            inherit.aes = FALSE, size = 3) +
+  scale_x_discrete(labels = stringr::str_to_title) +
+  scale_y_continuous(labels = scales::percent_format(),
+                     expand = expansion(mult = c(0, 0.2))) +
+  labs(title = "Shared pair proportion of its category pair pool", y = NULL, x = NULL) +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 8))
+
+combined <- (p_pair_closed | p_pair_moderate) /
+            (p_pair_open   | p_pair_prop)
+
+final_plot <- combined + plot_layout(guides = "collect", heights = c(1, 1)) +
+              plot_annotation(tag_levels = "A")
+
+# Save as PNG
+ggsave(file.path(out_dir, "pair_category.png"), final_plot,
+       width = 8, height = 5, dpi = 600, bg = "white")
+
+# Save as PDF
+ggsave(file.path(out_dir, "pair_category.pdf"), final_plot,
        width = 8, height = 5, bg = "white")
