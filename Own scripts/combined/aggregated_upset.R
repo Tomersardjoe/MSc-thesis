@@ -188,6 +188,7 @@ overlap_palette <- c(
 )
 
 set_order <- c("Coinfinder", "Goldfinder", "PanForest")
+category_order <- c("closed", "moderate", "open", "wildcard")
 
 # -------------------------
 # Parse arguments
@@ -318,8 +319,36 @@ cat(sprintf(
         sprintf("- %.4f", chisq_gene$p.value))
 ))
 
+gene_overall_mean <- sum(gene_cont_table[, "n_all_three_genes"]) /
+                     sum(rowSums(gene_cont_table))
+
+# Category prop test vs overall mean
+gene_category_tests <- data.frame(
+  category = rownames(gene_cont_table),
+  n_all_three_genes = gene_cont_table[, "n_all_three_genes"],
+  n_total_genes = rowSums(gene_cont_table)
+) %>%
+  rowwise() %>%
+  mutate(
+    p_value = prop.test(
+      x = n_all_three_genes,
+      n = n_total_genes,
+      p = gene_overall_mean
+    )$p.value
+  ) %>%
+  ungroup() %>%
+  mutate(
+    p_adj = p.adjust(p_value, method = "BH"),
+    signif = case_when(
+      p_adj < 0.001 ~ "***",
+      p_adj < 0.01  ~ "**",
+      p_adj < 0.05  ~ "*",
+      TRUE          ~ "ns"
+    )
+  )
+
 # Pairwise Fisher's exact test
-gene_categories <- rownames(gene_cont_table)
+gene_categories <- category_order[category_order %in% rownames(gene_cont_table)]
 gene_results <- data.frame(
   category1 = character(),
   category2 = character(),
@@ -340,43 +369,22 @@ for (i in 1:(length(gene_categories)-1)) {
 }
 
 gene_results <- gene_results %>%
-  mutate(signif = case_when(
-    p_value < 0.001 ~ "***",
-    p_value < 0.01  ~ "**",
-    p_value < 0.05  ~ "*",
-    TRUE            ~ "ns"
-  ))
+  mutate(
+    p_adj = p.adjust(p_value, method = "BH"),
+    signif = case_when(
+      p_adj < 0.001 ~ "***",
+      p_adj < 0.01  ~ "**",
+      p_adj < 0.05  ~ "*",
+      TRUE          ~ "ns"
+    ),
+    p_value = format(p_value, format = "g", digits = 3),
+    p_adj   = formatC(p_adj,   format = "g", digits = 3)
+  )
 
 # Save as TSV
 write.table(gene_results,
             file = file.path(out_dir, "gene_pairwise_fisher.tsv"),
             sep = "\t", row.names = FALSE, quote = FALSE)
-
-gene_overall_mean <- sum(gene_cont_table[, "n_all_three_genes"]) /
-                     sum(rowSums(gene_cont_table))
-
-# Category prop test vs overall mean
-gene_category_tests <- data.frame(
-  category = rownames(gene_cont_table),
-  n_all_three_genes = gene_cont_table[, "n_all_three_genes"],
-  n_total_genes = rowSums(gene_cont_table)
-) %>%
-  rowwise() %>%
-  mutate(
-    p_value = prop.test(
-      x = n_all_three_genes,
-      n = n_total_genes,
-      p = gene_overall_mean
-    )$p.value
-  ) %>%
-  mutate(
-    signif = case_when(
-      p_value < 0.001 ~ "***",
-      p_value < 0.01  ~ "**",
-      p_value < 0.05  ~ "*",
-      TRUE            ~ "ns"
-    )
-  )
 
 # Gene plot
 p_gene_prop <- ggplot(prop_df, aes(x = category, y = prop_all_three)) +
@@ -450,8 +458,35 @@ cat(sprintf(
          sprintf("= %.4f", chisq_pair$p.value))
 ))
 
+# Category prop test vs overall mean
+overall_mean <- sum(prop_pair_df$n_all_three_pairs) / sum(prop_pair_df$n_total_pairs)
+
+category_tests <- prop_pair_df %>%
+  rowwise() %>%
+  mutate(
+    p_value = prop.test(
+      x = n_all_three_pairs,
+      n = n_total_pairs,
+      p = overall_mean
+    )$p.value
+  ) %>%
+  ungroup() %>%
+  mutate(
+    p_adj = p.adjust(p_value, method = "BH")
+  )
+
+category_tests <- category_tests %>%
+  mutate(
+    signif = case_when(
+      p_adj < 0.001 ~ "***",
+      p_adj < 0.01  ~ "**",
+      p_adj < 0.05  ~ "*",
+      TRUE            ~ "ns"
+    )
+  )
+
 # Pairwise Fisher's exact test
-categories <- rownames(pair_cont_table)
+categories <- category_order[category_order %in% rownames(pair_cont_table)]
 results <- data.frame(
   category1 = character(),
   category2 = character(),
@@ -472,39 +507,21 @@ for (i in 1:(length(categories)-1)) {
 }
 
 results <- results %>%
-  mutate(signif = case_when(
-    p_value < 0.001 ~ "***",
-    p_value < 0.01  ~ "**",
-    p_value < 0.05  ~ "*",
-    TRUE            ~ "ns"
-  ))
+  mutate(
+    p_adj = p.adjust(p_value, method = "BH"),
+    signif = case_when(
+      p_adj < 0.001 ~ "***",
+      p_adj < 0.01  ~ "**",
+      p_adj < 0.05  ~ "*",
+      TRUE          ~ "ns"
+    ),
+    p_value = formatC(p_value, format = "g", digits = 3),
+    p_adj   = formatC(p_adj,   format = "g", digits = 3)
+  )
 
 write.table(results,
             file = file.path(out_dir, "pair_pairwise_fisher.tsv"),
             sep = "\t", row.names = FALSE, quote = FALSE)
-
-# Category prop test vs overall mean
-overall_mean <- sum(prop_pair_df$n_all_three_pairs) / sum(prop_pair_df$n_total_pairs)
-
-category_tests <- prop_pair_df %>%
-  rowwise() %>%
-  mutate(
-    p_value = prop.test(
-      x = n_all_three_pairs,
-      n = n_total_pairs,
-      p = overall_mean
-    )$p.value
-  )
-
-category_tests <- category_tests %>%
-  mutate(
-    signif = case_when(
-      p_value < 0.001 ~ "***",
-      p_value < 0.01  ~ "**",
-      p_value < 0.05  ~ "*",
-      TRUE            ~ "ns"
-    )
-  )
 
 # Pair plot
 p_pair_prop <- ggplot(prop_pair_df, aes(x = category, y = prop_all_three_pairs)) +
