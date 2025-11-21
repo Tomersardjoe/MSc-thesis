@@ -64,7 +64,7 @@ def lookup_fluidity_openness(species_categories_file, run_id):
     except Exception:
         fluidity = None
     try:
-        openness = float(row["Heaps_alpha_5000_perm"].iloc[0])
+        openness = float(row["openness"].iloc[0])
     except Exception:
         openness = None
     try:
@@ -78,7 +78,7 @@ def main():
     args = get_args()
 
     run_id = infer_run_id(args.infile)
-    tool = infer_tool(args.infile)
+    tool = infer_tool(args.infile).capitalize()
 
     total_dups = count_duplicates(args.dupfile)
 

@@ -63,7 +63,7 @@ def main():
     args = get_args()
 
     run_id = infer_run_id(args.infile)
-    tool = infer_tool(args.infile)
+    tool = infer_tool(args.infile).capitalize()
 
     # Count total significant pairs
     try:
