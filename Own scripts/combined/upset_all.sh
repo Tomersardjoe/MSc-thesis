@@ -61,7 +61,7 @@ PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 ROOT_DIR="$(dirname "$PARENT_DIR")"
 
 # Top-level output directory under repo root
-base_outdir="${ROOT_DIR}/combined_results/${dataset}_${mode}_${scope}"
+base_outdir="${ROOT_DIR}/combined_results/${dataset}_${mode}_${scope}/results"
 mkdir -p "$base_outdir"
 
 # Tool run directories (scope-aware)
