@@ -87,7 +87,7 @@ run_tool () {
         runs_dir="${runs_dir}/${mode}"
     fi
 
-    echo "Processing ${runs_subdir} (${subfolder}${base_runs_subdir=="panforest_runs" ? " | mode: ${mode}" : ""})"
+    echo "Processing ${runs_subdir} (${subfolder}/${base_runs_subdir=="panforest_runs" ? " | mode: ${mode}" : ""})"
 
     shopt -s nullglob
     local infiles=( "$runs_dir"/*/${subfolder}/*dvalues_*.csv )
