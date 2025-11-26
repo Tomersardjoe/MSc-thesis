@@ -319,6 +319,10 @@ if (n_high_pairs > 0) {
 
 ggsave(file.path(out_dir, paste0("d_distribution_pairs_curve_", unique_id, ".png")),
        plot = p_curve, width = 8, height = 6, dpi = 300, bg = "white")
+       
+# Save as PDF
+ggsave(file.path(out_dir, paste0("d_distribution_pairs_curve_", unique_id, ".pdf")),
+       plot = p_curve, width = 8, height = 6, bg = "white")              
 
 # Prepare scores and stats
 scores           <- as.numeric(imp_sym_raw)
