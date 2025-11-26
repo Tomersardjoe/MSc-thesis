@@ -75,8 +75,8 @@ def plot_clusters(df, centroids_df, outdir):
     plt.legend()
     plt.tight_layout()
 
-    fig_path = os.path.join(outdir, "cluster_assignments.png")
-    plt.savefig(fig_path, dpi=300)
+    fig_path = os.path.join(outdir, "cluster_assignments.pdf")
+    plt.savefig(fig_path)
     plt.close()
 
     print(f"Cluster figure saved to {fig_path}")
