@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
+import matplotlib.pyplot as plt
 import os
 import argparse
 import sys
@@ -44,6 +45,41 @@ def run_clustering(df: pd.DataFrame):
     df['category'] = df['cluster'].map(cluster_to_category)
     return df, centroids_df, best_k
 
+import matplotlib.pyplot as plt
+
+def plot_clusters(df, centroids_df, outdir):
+    """
+    Scatter plot of fluidity vs openness with cluster assignments.
+    Centroids are marked with larger black Xs.
+    """
+
+    plt.figure(figsize=(8,6))
+
+    # Color by category
+    categories = df['category'].unique()
+    colors = {'Open':'tab:blue', 'Closed':'tab:red',
+              'Moderate':'tab:green', 'Other':'tab:gray'}
+
+    for cat in categories:
+        subset = df[df['category'] == cat]
+        plt.scatter(subset['fluidity_calc'], subset['openness'],
+                    c=colors.get(cat,'tab:gray'), label=cat, alpha=0.7, s=40)
+
+    # Plot centroids
+    plt.scatter(centroids_df['fluidity_calc'], centroids_df['openness'],
+                c='black', marker='x', s=200, linewidths=3, label='Centroids')
+
+    plt.xlabel("Genomic fluidity")
+    plt.ylabel("Pangenome openness (a)")
+    plt.title("Cluster assignments of pangenomes")
+    plt.legend()
+    plt.tight_layout()
+
+    fig_path = os.path.join(outdir, "cluster_assignments.png")
+    plt.savefig(fig_path, dpi=300)
+    plt.close()
+
+    print(f"Cluster figure saved to {fig_path}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Merge fluidity/openness and cluster pangenomes")
@@ -79,6 +115,7 @@ if __name__ == "__main__":
 
     # Run clustering
     clustered, centroids_df, best_k = run_clustering(merged.copy())
+    plot_clusters(clustered, centroids_df, args.outdir)
 
     # Insert category as first column
     merged['category'] = clustered['category']
@@ -88,9 +125,10 @@ if __name__ == "__main__":
     out_csv = os.path.join(args.outdir, "matched_all.csv")
     merged.to_csv(out_csv, index=False)
 
-    clustered[['species_taxid','fluidity_calc','openness','category']].to_csv(
-        os.path.join(args.outdir, "species_category_assignments.csv"), index=False)
-    centroids_df.to_csv(os.path.join(args.outdir, "cluster_centroids.csv"), index_label='cluster')
+    # Uncomment if for extra files
+    #clustered[['species_taxid','fluidity_calc','openness','category']].to_csv(
+    #    os.path.join(args.outdir, "species_category_assignments.csv"), index=False)
+    #centroids_df.to_csv(os.path.join(args.outdir, "cluster_centroids.csv"), index_label='cluster')
 
     print(f"Best k based on silhouette score: {best_k}")
     print(f"Updated matched_all.csv written with {len(merged)} rows.")
