@@ -6,47 +6,44 @@ if [ "$CONDA_DEFAULT_ENV" != "$required_env" ]; then
     exit 1
 fi
 
-# Locate directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Top-level output directory under repo root
 base_outdir="${PARENT_DIR}/real_pangenomes"
 mkdir -p "$base_outdir"
 
-gpa_dir="$(realpath "$base_outdir/gpa_matches")"
-output_csv="$base_outdir/alpha_fluidity_all.csv"
+gpa_dir="${base_outdir}/gpa_matches_all"
+output_csv="${base_outdir}/alpha_fluidity_all.csv"
 
+# Write header if file doesn’t exist
 if [ ! -f "$output_csv" ]; then
-    echo "filename,fluidity,openness" > "$output_csv"
+    echo "species_taxid,filename,fluidity_calc,openness" > "$output_csv"
 fi
 
 # Safety: bail if directories aren’t found
-for d in "$gpa_dir"; do
-    if [ ! -d "$d" ]; then
-        echo "Error: Directory '$d' not found. Check the path."
-        exit 1
-    fi
-done
+if [ ! -d "$gpa_dir" ]; then
+    echo "Error: Directory '$gpa_dir' not found. Check the path."
+    exit 1
+fi
 
-for file in "$base_outdir"/gpa_matches_all/*_REDUCED.csv; do
+for file in "$gpa_dir"/*_REDUCED.csv; do
     filename=$(basename "$file")
+    species_taxid=$(echo "$filename" | cut -d'_' -f1)
 
-    # Skip if this filename and both numeric values are present already
-    pattern=$(printf '%s' "$filename" | sed -e 's/[]\/$*.^|[]/\\&/g')
-    if sed 's/\r$//' "$output_csv" | grep -Eq "^$pattern,[0-9.]+,[0-9.]+$"; then
-    echo "Skipping..."
-    continue
+    # Skip if already processed
+    pattern=$(printf '%s' "$species_taxid" | sed -e 's/[]\/$*.^|[]/\\&/g')
+    if sed 's/\r$//' "$output_csv" | grep -Eq "^$pattern,"; then
+        echo "Skipping $filename..."
+        continue
     fi
 
     echo "Processing $filename..."
     result=$(Rscript "$SCRIPT_DIR/fluidity_calc.R" "$file")
 
-    # Prevent grepping progress lines
     fluidity=$(echo "$result" | grep "Genomic fluidity" | sed -E 's/.*: *([0-9.]+) *$/\1/')
     openness=$(echo "$result" | grep "Pangenome openness" | sed -E 's/.*: *([0-9.]+) *$/\1/')
 
-    echo "$filename,$fluidity,$openness" >> "$output_csv"
+    echo "$species_taxid,$filename,$fluidity,$openness" >> "$output_csv"
 done
 
 echo "All results written to $output_csv"
