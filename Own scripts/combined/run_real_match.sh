@@ -82,15 +82,17 @@ run_tool () {
     local runs_subdir="${base_runs_subdir}_${scope}"
     local runs_dir="${dataset}/${runs_subdir}"
 
-    # If panforest, include mode
-    if [[ "$base_runs_subdir" == "panforest_runs" ]]; then
-        runs_dir="${runs_dir}/${mode}"
-    fi
-
-    echo "Processing ${runs_subdir} (${subfolder}/${base_runs_subdir=="panforest_runs" ? " | mode: ${mode}" : ""})"
+    echo "Processing ${runs_subdir} (${subfolder}/${base_runs_subdir})"
 
     shopt -s nullglob
-    local infiles=( "$runs_dir"/*/${subfolder}/*dvalues_*.csv )
+    local infiles=()
+
+    if [[ "$base_runs_subdir" == "panforest_runs" ]]; then
+        runs_dir="${runs_dir}/${mode}"
+        infiles=( "$runs_dir"/*/"${subfolder}"/*dvalues_*.csv )
+    else
+        infiles=( "$runs_dir"/*/"${subfolder}"/*dvalues_*.csv )
+    fi
     shopt -u nullglob
 
     local total=${#infiles[@]}
@@ -108,7 +110,7 @@ run_tool () {
         echo "Run ${count} / ${total} (pangenome ${run_id})"
         python3 "$script" \
             -i "$infile" \
-            -a "$match_file" \
+            -m "$match_file" \
             -o "$summary_file"
     done
 }

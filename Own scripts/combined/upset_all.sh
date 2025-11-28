@@ -77,14 +77,21 @@ for d in "$coin_dir" "$gold_dir" "$pan_dir"; do
 done
 
 # Category file
-categories_file="$(realpath "real_pangenomes/species_categories.csv")"
-if [ ! -f "$categories_file" ]; then
-  echo "Error: species_categories.csv not found in $dataset. Exiting."
+if [ "$scope" = "selected" ]; then
+  categories_file="$(realpath "real_pangenomes/species_categories.csv")"
+elif [ "$scope" = "all" ]; then
+  categories_file="$(realpath "real_pangenomes/species_categories.csv")"
+else
+  echo "Error: Unknown scope '$scope'"
   exit 1
 fi
 
-# Run the R script
-echo "Running aggregated_upset.R for dataset '$dataset' (mode: $mode, scope: $scope)"
+if [ ! -f "$categories_file" ]; then
+  echo "Error: species_categories.csv not found at $categories_file. Exiting."
+  exit 1
+fi
+
+# Build the base command
 cmd=( Rscript "$SCRIPT_DIR/aggregated_upset.R" \
       "$coin_dir" \
       "$gold_dir" \
@@ -92,6 +99,22 @@ cmd=( Rscript "$SCRIPT_DIR/aggregated_upset.R" \
       "$categories_file" \
       "$base_outdir" )
 
+# Optional summary file if dataset is simulated
+if [[ "$dataset" == "simulated_pangenomes_flip" || "$dataset" == "simulated_pangenomes_perfect" ]]; then
+  dataset_suffix="${dataset##simulated_pangenomes_}"
+  summary_file="simulated_pangenomes_${dataset_suffix}_dup_match_${mode}_${scope}.tsv"
+  summary_path="$(realpath "$dataset/$summary_file")"
+
+  if [ -f "$summary_path" ]; then
+    cmd+=( "$summary_path" )
+    echo "Passed $summary_path as optional argument"
+  else
+    echo "Warning: expected summary file $summary_path not found, continuing without it."
+  fi
+fi
+
+# Run the R script
+echo "Running aggregated_upset.R for dataset '$dataset' (mode: $mode, scope: $scope)"
 "${cmd[@]}"
 
 echo "Finished generating aggregated UpSet plots for dataset '$dataset' (mode: $mode, scope: $scope)"

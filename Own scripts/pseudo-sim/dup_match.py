@@ -9,11 +9,11 @@ import re
 def get_args():
     parser = argparse.ArgumentParser(description="Summarize duplicate recovery")
     parser.add_argument("-i", "--infile", required=True,
-                        help="Path to input CSV file (Coinfinder/Goldfinder output)")
+                        help="Path to input CSV file (Coinfinder/Goldfinder/PanForest output)")
     parser.add_argument("-d", "--dupfile", required=True,
                         help="Path to duplicates{run_id}_REDUCED.csv file")
-    parser.add_argument("-s", "--species_categories_file", required=True,
-                        help="Path to species_categories.csv file")
+    parser.add_argument("-m", "--match_file", required=True,
+                        help="Path to species_categories.csv or match_all.csv file")
     parser.add_argument("-o", "--outfile", required=True,
                         help="Path to summary TSV file (append mode)")
     return parser.parse_args()
@@ -43,11 +43,11 @@ def infer_tool(infile):
     else:
         return "unknown"
 
-def lookup_fluidity_openness(species_categories_file, run_id):
+def lookup_fluidity_openness(match_file, run_id):
     try:
-        df = pd.read_csv(species_categories_file)
+        df = pd.read_csv(match_file)
     except Exception as e:
-        sys.stderr.write(f"Warning: could not read {species_categories_file}: {e}\n")
+        sys.stderr.write(f"Warning: could not read {match_file}: {e}\n")
         return None, None, None
 
     try:
@@ -116,14 +116,13 @@ def main():
     recall = TP / (TP + FN) if (TP + FN) > 0 else 0.0
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
-    # Lookup fluidity/openness
-    fluidity, openness, category = lookup_fluidity_openness(args.species_categories_file, run_id)
-
+    fluidity, openness, category = lookup_fluidity_openness(args.match_file, run_id)
+    
     header = not os.path.exists(args.outfile) or os.path.getsize(args.outfile) == 0
     with open(args.outfile, "a") as out:
         if header:
             out.write(
-                "tool\tpangenome_id\t"
+                "Method\tpangenome_id\t"
                 "total_significant_pairs\t"
                 "duplicate_genes_found\t"
                 "total_duplicate_genes\t"
@@ -141,8 +140,8 @@ def main():
             f"{pct_total_dups:.2f}\t"
             f"{pct_total_pairs:.2f}\t"
             f"{precision:.3f}\t{recall:.3f}\t{f1:.3f}\t"
-            f"{'' if fluidity is None else fluidity:.6f}\t"
-            f"{'' if openness is None else openness:.6f}\t"
+            f"{'' if fluidity is None else f'{fluidity:.6f}'}\t"
+            f"{'' if openness is None else f'{openness:.6f}'}\t"
             f"{'' if category is None else category}\n"
         )
 

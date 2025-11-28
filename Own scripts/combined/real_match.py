@@ -10,8 +10,8 @@ def get_args():
     parser = argparse.ArgumentParser(description="Summarize real pangenome results")
     parser.add_argument("-i", "--infile", required=True,
                         help="Path to input CSV file (Coinfinder/Goldfinder/PanForest output)")
-    parser.add_argument("-a", "--match_file", required=True,
-                        help="Path to match_all.csv file")
+    parser.add_argument("-m", "--match_file", required=True,
+                        help="Path to species_categories.csv or match_all.csv file")
     parser.add_argument("-o", "--outfile", required=True,
                         help="Path to summary TSV file (append mode)")
     return parser.parse_args()
@@ -83,13 +83,13 @@ def main():
     header = not os.path.exists(args.outfile) or os.path.getsize(args.outfile) == 0
     with open(args.outfile, "a") as out:
         if header:
-            out.write("tool\tpangenome_id\ttotal_significant_pairs\tfluidity\topenness\n")
+            out.write("Method\tpangenome_id\ttotal_significant_pairs\tfluidity\topenness\n")
 
         out.write(
             f"{tool}\t{run_id}\t"
             f"{total_pairs}\t"
-            f"{'' if fluidity is None else fluidity:.6f}\t"
-            f"{'' if openness is None else openness:.6f}\n"
+            f"{'' if fluidity is None else f'fluidity:.6f}'\t"
+            f"{'' if openness is None else f'openness:.6f}'\n"
         )
 
 if __name__ == "__main__":

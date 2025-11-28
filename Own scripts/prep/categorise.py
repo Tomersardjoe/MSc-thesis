@@ -45,8 +45,6 @@ def run_clustering(df: pd.DataFrame):
     df['category'] = df['cluster'].map(cluster_to_category)
     return df, centroids_df, best_k
 
-import matplotlib.pyplot as plt
-
 def plot_clusters(df, centroids_df, outdir):
     """
     Scatter plot of fluidity vs openness with cluster assignments.
@@ -96,14 +94,13 @@ if __name__ == "__main__":
         sys.exit(0)
 
     alpha_df = pd.read_csv(args.alpha)
-    alpha_df = alpha_df.rename(columns={"fluidity": "fluidity_calc"})
 
     matched_df['species_taxid'] = matched_df['species_taxid'].astype(str)
     alpha_df['species_taxid'] = alpha_df['species_taxid'].astype(str)
 
     merged = matched_df.merge(alpha_df[['species_taxid','fluidity_calc','openness']],
                               on='species_taxid', how='left')
-
+    
     # Reorder fluidity_calc/openness after pangenome_fluidity
     cols = list(merged.columns)
     for c in ['fluidity_calc','openness']:
@@ -117,7 +114,7 @@ if __name__ == "__main__":
     clustered, centroids_df, best_k = run_clustering(merged.copy())
     plot_clusters(clustered, centroids_df, args.outdir)
 
-    # Insert category as first column
+    # Insert category as first column 
     merged['category'] = clustered['category']
     merged = merged[['category'] + [c for c in merged.columns if c != 'category']]
 
@@ -131,4 +128,4 @@ if __name__ == "__main__":
     #centroids_df.to_csv(os.path.join(args.outdir, "cluster_centroids.csv"), index_label='cluster')
 
     print(f"Best k based on silhouette score: {best_k}")
-    print(f"Updated matched_all.csv written with {len(merged)} rows.")
+    print(f"Updated matched_all.csv written to {out_csv} with {len(merged)} rows.")

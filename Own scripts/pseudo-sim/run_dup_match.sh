@@ -58,13 +58,14 @@ fi
 if [ "$scope" = "all" ]; then
     gpa_dir="${dataset}/gpa_matches_all"
     summary_file="${dataset}/${dataset}_dup_match_${mode}_all.tsv"
+    match_file="real_pangenomes/matched_all.csv"
 else
     gpa_dir="${dataset}/gpa_matches"
     summary_file="${dataset}/${dataset}_dup_match_${mode}_selected.tsv"
+    match_file="real_pangenomes/species_categories.csv"
 fi
 
 script="scripts/pseudo-sim/dup_match.py"
-species_categories_file="real_pangenomes/species_categories.csv"
 
 # Overwrite the summary file
 : > "$summary_file"
@@ -75,27 +76,17 @@ run_tool () {
     local runs_subdir="${base_runs_subdir}_${scope}"
     local runs_dir="${dataset}/${runs_subdir}"
 
-    # If panforest, include mode
-    if [[ "$base_runs_subdir" == "panforest_runs" ]]; then
-        runs_dir="${runs_dir}/${mode}"
-    fi
-
-    # Safety checks
-    for d in "$runs_dir" "$gpa_dir"; do
-        if [ ! -d "$d" ]; then
-            echo "Error: Directory '$d' not found."
-            return
-        fi
-    done
-    if [ ! -f "$species_categories_file" ]; then
-        echo "Error: Species categories file '$species_categories_file' not found."
-        return
-    fi
-
-    echo "Processing ${runs_subdir} (${subfolder}/${base_runs_subdir=="panforest_runs" ? " | mode: ${mode}" : ""})"
+    echo "Processing ${runs_subdir} (${subfolder}/${base_runs_subdir})"
 
     shopt -s nullglob
-    local infiles=( "$runs_dir"/*/${subfolder}/*dvalues_*.csv )
+    local infiles=()
+
+    if [[ "$base_runs_subdir" == "panforest_runs" ]]; then
+        runs_dir="${runs_dir}/${mode}"
+        infiles=( "$runs_dir"/*/"${subfolder}"/*dvalues_*.csv )
+    else
+        infiles=( "$runs_dir"/*/"${subfolder}"/*dvalues_*.csv )
+    fi
     shopt -u nullglob
 
     local total=${#infiles[@]}
@@ -120,7 +111,7 @@ run_tool () {
         python3 "$script" \
             -i "$infile" \
             -d "$dup_file" \
-            -s "$species_categories_file" \
+            -m "$match_file" \
             -o "$summary_file"
     done
 }
