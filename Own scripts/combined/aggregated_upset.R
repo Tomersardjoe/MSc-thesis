@@ -35,7 +35,32 @@ classify_overlap <- function(methods) {
 message("Safe loading D-value CSVs - Do not worry if files are missing! This is most likely due to a tool not having produced significant results (always check). This is expected and does not break the script.")
 safe_read <- function(path, method_name) {
   if (!is.null(path) && file.exists(path)) {
-    readr::read_csv(path, show_col_types = FALSE) %>%
+    # Check if file has more than just the header
+    n_lines <- length(readr::read_lines(path))
+    if (n_lines <= 1) {
+      message("Skipping empty file (header only): ", path)
+      return(tibble::tibble(
+        Level  = character(),
+        Gene   = character(),
+        Gene_1 = character(),
+        Gene_2 = character(),
+        Pair   = character(),
+        D_value= numeric(),
+        Method = character()
+      ))
+    }
+    
+    readr::read_csv(
+      path,
+      show_col_types = FALSE,
+      col_types = readr::cols(
+        Level   = readr::col_character(),
+        Gene    = readr::col_character(),
+        Gene_1  = readr::col_character(),
+        Gene_2  = readr::col_character(),
+        D_value = readr::col_double()
+      )
+    ) %>%
       dplyr::filter(Level %in% c("Gene", "Pair")) %>%
       dplyr::transmute(
         Level,
@@ -389,21 +414,37 @@ if (!is.null(summary_file)) {
 
 species_taxids <- list.dirs(coin_dir, recursive = FALSE, full.names = FALSE)
 
-all_runs <- purrr::map_dfr(species_taxids, function(species_taxid) {
-  coin_path <- file.path(coin_dir, species_taxid, "d_cutoff",
-                         paste0("coinfinder_dvalues_", species_taxid, ".csv"))
-  gold_path <- file.path(gold_dir, species_taxid, "d_distribution",
-                         paste0("goldfinder_dvalues_", species_taxid, ".csv"))
-  pan_path  <- file.path(pan_dir,  species_taxid, "imp_cutoff",
-                         paste0("panforest_dvalues_", species_taxid, ".csv"))
+all_runs <- purrr::map_dfr(seq_along(species_taxids), function(i) {
+  species_taxid <- species_taxids[i]
 
+  tryCatch({
+    coin_path <- file.path(coin_dir, species_taxid, "d_cutoff",
+                           paste0("coinfinder_dvalues_", species_taxid, ".csv"))
+    gold_path <- file.path(gold_dir, species_taxid, "d_distribution",
+                           paste0("goldfinder_dvalues_", species_taxid, ".csv"))
+    pan_path  <- file.path(pan_dir,  species_taxid, "imp_cutoff",
+                           paste0("panforest_dvalues_", species_taxid, ".csv"))
 
-  coin <- safe_read(coin_path, "Coinfinder")
-  gold <- safe_read(gold_path, "Goldfinder")
-  pan  <- safe_read(pan_path,  "PanForest")
-  
-  dplyr::bind_rows(coin, gold, pan) %>%
-    dplyr::mutate(species_taxid = species_taxid)
+    coin <- safe_read(coin_path, "Coinfinder")
+    gold <- safe_read(gold_path, "Goldfinder")
+    pan  <- safe_read(pan_path,  "PanForest")
+
+    dplyr::bind_rows(coin, gold, pan) %>%
+      dplyr::mutate(species_taxid = species_taxid)
+
+  }, error = function(e) {
+    message("Failed at index ", i, " (species_taxid = ", species_taxid, "): ", conditionMessage(e))
+    tibble::tibble(
+      Level  = character(),
+      Gene   = character(),
+      Gene_1 = character(),
+      Gene_2 = character(),
+      Pair   = character(),
+      D_value= numeric(),
+      Method = character(),
+      species_taxid = character()
+    )
+  })
 })
 
 categories <- readr::read_csv(
@@ -413,9 +454,14 @@ categories <- readr::read_csv(
   show_col_types = FALSE
 )
 
-
 all_runs <- all_runs %>%
   dplyr::left_join(categories, by = "species_taxid")
+  
+if ("category" %in% names(all_runs)) {
+  all_runs <- all_runs %>% dplyr::filter(!is.na(category))
+} else {
+  message("No 'category' column found after join - skipping filter.")
+}    
 
 # -------------------------
 # UpSet plots
