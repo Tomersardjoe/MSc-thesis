@@ -132,7 +132,8 @@ make_upset_df <- function(df, id_col, filter_expr = TRUE, method_order = c("Coin
 
 # UpSet plot generator
 make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir,
-                            show_pattern_legend = FALSE, relative = FALSE) {
+                            show_pattern_legend = FALSE, relative = FALSE,
+                            overlay_df = NULL) {
   pattern_fill_colors <- c(
     Coinfinder   = method_colors[["Coinfinder"]],
     Goldfinder   = method_colors[["Goldfinder"]],
@@ -145,8 +146,7 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir,
       base_tool    = factor(base_tool, levels = names(method_colors)),
       overlay_tool = factor(overlay_tool, levels = c(names(method_colors), "TRIPLE_WHITE")),
       pattern      = factor(pattern, levels = c("none","stripe","crosshatch")),
-      sets         = lapply(sets, function(x) factor(x,
-                            levels = c("Coinfinder","Goldfinder","PanForest")))
+      sets         = lapply(sets, as.character)
     )
 
   plot_df <- df2
@@ -188,8 +188,43 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir,
       combmatrix.panel.line.size  = 0.3
     ) +
     theme(plot.title = element_text(size = 8))
-
-  return(p)
+    
+  if (!is.null(overlay_df) && nrow(overlay_df) > 0) {
+    p <- p +
+      geom_col(
+        data = overlay_df,
+        aes(x = sets, y = value_below, fill = "Goldfinder below D-cutoff"),  # map to legend key
+        colour = "black", linewidth = 0.2, width = 0.7, inherit.aes = FALSE,
+        na.rm = TRUE
+      ) +
+      geom_label(
+        data = overlay_df,
+        aes(x = sets, y = value_below / 2, label = value_below),
+        inherit.aes = FALSE,
+        size = 3,
+        label.size = 0,
+        fill = "white",
+        na.rm = TRUE
+      ) +
+      scale_fill_manual(
+        name   = "Method",
+        values = c(
+          Coinfinder                  = method_colors[["Coinfinder"]],
+          Goldfinder                  = method_colors[["Goldfinder"]],
+          PanForest                   = method_colors[["PanForest"]],
+          "Goldfinder below D-cutoff" = "#9F8538"
+        ),
+        breaks = c("Coinfinder", "Goldfinder", "Goldfinder below D-cutoff", "PanForest"),
+        labels = c(
+          Coinfinder                  = "Coinfinder",
+          Goldfinder                  = "Goldfinder - total",
+          "Goldfinder below D-cutoff" = "Goldfinder below D-cutoff",
+          PanForest                   = "PanForest"
+        ),
+        drop   = FALSE
+      )
+  }
+return(p)
 }
 
 make_metrics_data <- function(dup_summary_run) {
@@ -412,11 +447,22 @@ if (!is.null(summary_file)) {
 # Data loading
 # -------------------------
 
+# Build a named vector of D-value cutoffs per pangenome
 species_taxids <- list.dirs(coin_dir, recursive = FALSE, full.names = FALSE)
 
-all_runs <- purrr::map_dfr(seq_along(species_taxids), function(i) {
-  species_taxid <- species_taxids[i]
+cutoff_lookup <- purrr::map_dbl(species_taxids, function(species_taxid) {
+  cutoff_file <- file.path(coin_dir, species_taxid, "d_cutoff",
+                           paste0(species_taxid, "_d_cutoff.txt"))
+  if (file.exists(cutoff_file)) {
+    as.numeric(readr::read_lines(cutoff_file))
+  } else {
+    NA_real_
+  }
+})
 
+names(cutoff_lookup) <- species_taxids
+
+all_runs <- purrr::map_dfr(species_taxids, function(species_taxid) {
   tryCatch({
     coin_path <- file.path(coin_dir, species_taxid, "d_cutoff",
                            paste0("coinfinder_dvalues_", species_taxid, ".csv"))
@@ -431,28 +477,29 @@ all_runs <- purrr::map_dfr(seq_along(species_taxids), function(i) {
 
     dplyr::bind_rows(coin, gold, pan) %>%
       dplyr::mutate(species_taxid = species_taxid)
-
   }, error = function(e) {
-    message("Failed at index ", i, " (species_taxid = ", species_taxid, "): ", conditionMessage(e))
+    message("Failed for species_taxid = ", species_taxid, ": ", conditionMessage(e))
     tibble::tibble(
-      Level  = character(),
-      Gene   = character(),
-      Gene_1 = character(),
-      Gene_2 = character(),
-      Pair   = character(),
-      D_value= numeric(),
-      Method = character(),
-      species_taxid = character()
+      Level        = character(),
+      Gene         = character(),
+      Gene_1       = character(),
+      Gene_2       = character(),
+      D_value      = numeric(),
+      Method       = character(),
+      species_taxid= character()
     )
   })
 })
 
 categories <- readr::read_csv(
   categories_path,
-  col_names = c("category", "species_taxid"),
   col_select = 1:2,
   show_col_types = FALSE
-)
+) %>%
+  dplyr::mutate(
+    species_taxid = as.character(species_taxid),
+    category      = as.character(category)
+  )
 
 all_runs <- all_runs %>%
   dplyr::left_join(categories, by = "species_taxid")
@@ -461,7 +508,7 @@ if ("category" %in% names(all_runs)) {
   all_runs <- all_runs %>% dplyr::filter(!is.na(category))
 } else {
   message("No 'category' column found after join - skipping filter.")
-}    
+}
 
 # -------------------------
 # UpSet plots
@@ -473,22 +520,89 @@ for (cat in unique(all_runs$category)) {
   # Gene-level
   df_gene <- make_upset_df(df_cat %>% dplyr::filter(Level == "Gene"),
                            id_col = Gene, filter_expr = TRUE, method_order = set_order)
+  
+  # Goldfinder-exclusive genes
+  gf_exclusive_genes <- df_cat %>%
+    filter(Level == "Gene") %>%
+    group_by(Gene) %>%
+    summarise(methods = list(unique(Method)), .groups = "drop") %>%
+    filter(purrr::map_lgl(methods, ~ setequal(.x, "Goldfinder")))
+
+  
+  # Goldfinder unique below D-cutoff genes
+  gold_unique_below_genes <- df_cat %>%
+    semi_join(gf_exclusive_genes, by = "Gene") %>%
+    filter(Method == "Goldfinder") %>%
+    rowwise() %>%
+    mutate(
+      cutoff_value = cutoff_lookup[[species_taxid]],
+      below_cutoff = D_value < cutoff_value
+    ) %>%
+    ungroup() %>%
+    filter(below_cutoff) %>%
+    distinct(Gene, .keep_all = FALSE) %>%
+    summarise(value_below = n(), .groups = "drop")
+
+  overlay_sets <- list(
+    tibble::tibble(sets = list(c("Coinfinder")), value_below = NA_integer_),
+    tibble::tibble(sets = list(c("Goldfinder")), value_below = gold_unique_below_genes$value_below),
+    tibble::tibble(sets = list(c("PanForest")),  value_below = NA_integer_)
+  )
+  
+  gold_unique_below_genes <- dplyr::bind_rows(overlay_sets) %>%
+    dplyr::mutate(
+      category  = cat,
+      base_tool = "Goldfinder"
+    )
+                                                                                     
   p_gene <- make_upset_plot(df_gene,
-                            paste("Gene counts -", cat, "pangenomes"),
+                            paste("Unique gene counts -", cat, "pangenomes"),
                             NULL,
                             paste0(cat, "_upset_genes.png"),
-                            method_colors, out_dir)
+                            method_colors, out_dir,
+                            overlay_df = gold_unique_below_genes)
 
   assign(paste0("p_gene_", cat), p_gene)
 
   # Pair-level
   pairs_df <- prepare_pairs_df(df_cat)
   df_pairs <- make_upset_df(pairs_df, id_col = PairID, filter_expr = TRUE, method_order = set_order)
+  
+  # Goldfinder-exclusive pairs
+  gf_exclusive_pairs <- pairs_df %>%
+    group_by(PairID) %>%
+    summarise(methods = list(unique(Method)), .groups = "drop") %>%
+    filter(purrr::map_lgl(methods, ~ setequal(.x, "Goldfinder")))
+  
+  # Goldfinder unique below D-cutoff pairs
+  gold_unique_below_pairs <- pairs_df %>%
+    semi_join(gf_exclusive_pairs, by = "PairID") %>%
+    filter(Method == "Goldfinder", Level == "Pair") %>%
+    rowwise() %>%
+    mutate(
+      cutoff_value = cutoff_lookup[[species_taxid]],
+      below_cutoff = D_value < cutoff_value
+    ) %>%
+    ungroup() %>%
+    filter(below_cutoff) %>%
+    distinct(PairID, .keep_all = FALSE) %>%   # ensure uniqueness
+    summarise(value_below = n(), .groups = "drop")
+
+  overlay_sets <- list(
+    tibble::tibble(sets = list(c("Coinfinder")), value_below = NA_integer_),
+    tibble::tibble(sets = list(c("Goldfinder")), value_below = gold_unique_below_pairs$value_below),
+    tibble::tibble(sets = list(c("PanForest")),  value_below = NA_integer_)
+  )
+  
+  gold_unique_below_pairs <- bind_rows(overlay_sets) %>%
+    mutate(category = cat, base_tool = "Goldfinder")
+
   p_pair <- make_upset_plot(df_pairs,
-                            paste("Pair counts -", cat, "pangenomes"),
+                            paste("Gene pair counts -", cat, "pangenomes"),
                             NULL,
                             paste0(cat, "_upset_pairs.png"),
-                            method_colors, out_dir)
+                            method_colors, out_dir,
+                            overlay_df = gold_unique_below_pairs)
 
   assign(paste0("p_pair_", cat), p_pair)
 }
@@ -628,19 +742,35 @@ write.table(gene_results,
             file = file.path(out_dir, "gene_pairwise_fisher.tsv"),
             sep = "\t", row.names = FALSE, quote = FALSE)
 
-# Gene plot
+labels_df <- dplyr::left_join(
+  gene_category_tests %>%
+    dplyr::select(category, signif),
+  prop_df %>%
+    dplyr::select(category, prop_all_three),
+  by = "category"
+)
+
+y_range <- range(prop_df$prop_all_three, na.rm = TRUE)
+offset  <- 0.05 * diff(y_range)
+
+labels_df <- labels_df %>%
+  dplyr::mutate(label_y = prop_all_three + offset)
+
+# Gene proportion plot
 p_gene_prop <- ggplot(prop_df, aes(x = category, y = prop_all_three)) +
   geom_col(fill = prop_colors[prop_df$category],
            colour = "black", linewidth = 0.2, width = 0.7) +
   geom_label(aes(label = scales::percent(prop_all_three, accuracy = 0.1)),
              vjust = -0.3, size = 3, label.size = 0, fill = "white") +
-  geom_text(data = gene_category_tests,
-            aes(x = category, y = (n_all_three_genes / n_total_genes) + 0.05, label = signif),
-            inherit.aes = FALSE, size = 3) +
+  geom_text(data = labels_df,
+            aes(x = category, y = label_y + 0.05, label = signif),
+            inherit.aes = FALSE, size = 4) +
   scale_x_discrete(labels = stringr::str_to_title) +
   scale_y_continuous(labels = scales::percent_format(),
-                     expand = expansion(mult = c(0, 0.2))) +
-  labs(title = "Shared gene proportion of its category gene pool", y = NULL, x = NULL) +
+                     expand = expansion(mult = c(0, 0.12))) +
+  coord_cartesian(clip = "off") +
+  labs(title = "Proportion of all tool agreed genes\nof each category's total unique gene pool",
+       y = NULL, x = NULL) +
   theme_minimal() +
   theme(plot.title = element_text(size = 8))
 
@@ -648,16 +778,19 @@ p_gene_prop <- ggplot(prop_df, aes(x = category, y = prop_all_three)) +
 combined <- (p_gene_Closed | p_gene_Moderate) /
             (p_gene_Open   | p_gene_prop)
 
-final_plot <- combined + plot_layout(guides = "collect", heights = c(1, 1))
-  
-final_plot <- final_plot + plot_annotation(tag_levels = "A")
+final_plot <- combined +
+  plot_layout(guides = "collect", heights = c(1, 1)) +
+  plot_annotation(tag_levels = "A") &
+  theme(
+    legend.text = element_text(size = 8)
+  )
 
 ggsave(file.path(out_dir, "gene_category.png"), final_plot,
-       width = 8, height = 5, dpi = 600, bg = "white")
+       width = 10, height = 5, dpi = 600, bg = "white")
 
 # Save as PDF
 ggsave(file.path(out_dir, "gene_category.pdf"), final_plot,
-       width = 8, height = 5, bg = "white")
+       width = 10, height = 5, bg = "white")
 
 # Proportion of all three tool agreement to total pair pool of each category
 prop_pair_df <- all_runs %>%
@@ -792,27 +925,31 @@ p_pair_prop <- ggplot(prop_pair_df, aes(x = category, y = prop_all_three_pairs))
              vjust = -0.3, size = 3, label.size = 0, fill = "white") +
   geom_text(data = category_tests,
             aes(x = category, y = prop_all_three_pairs + 0.01, label = signif),
-            inherit.aes = FALSE, size = 3) +
+            inherit.aes = FALSE, size = 4) +
   scale_x_discrete(labels = stringr::str_to_title) +
   scale_y_continuous(labels = scales::percent_format(),
                      expand = expansion(mult = c(0, 0.2))) +
-  labs(title = "Shared pair proportion of its category pair pool", y = NULL, x = NULL) +
+  labs(title = "Proportion of all tool agreed gene pairs\nof each category's total gene pair count", y = NULL, x = NULL) +
   theme_minimal() +
   theme(plot.title = element_text(size = 8))
 
 combined <- (p_pair_Closed | p_pair_Moderate) /
             (p_pair_Open   | p_pair_prop)
 
-final_plot <- combined + plot_layout(guides = "collect", heights = c(1, 1)) +
-              plot_annotation(tag_levels = "A")
+final_plot <- combined + 
+  plot_layout(guides = "collect", heights = c(1, 1)) +
+  plot_annotation(tag_levels = "A") &
+  theme(
+    legend.text     = element_text(size = 8)
+  )
 
 # Save as PNG
 ggsave(file.path(out_dir, "pair_category.png"), final_plot,
-       width = 8, height = 5, dpi = 600, bg = "white")
+       width = 10, height = 5, dpi = 600, bg = "white")
 
 # Save as PDF
 ggsave(file.path(out_dir, "pair_category.pdf"), final_plot,
-       width = 8, height = 5, bg = "white")
+       width = 10, height = 5, bg = "white")
 
 ##### PSEUDO-SIMULATED DATASETS ONLY #####
 
