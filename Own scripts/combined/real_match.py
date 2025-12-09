@@ -24,13 +24,13 @@ def infer_run_id(infile):
 def infer_tool(infile):
     path = infile.lower()
     if "coinfinder" in path:
-        return "coinfinder"
+        return "Coinfinder"
     elif "goldfinder" in path:
-        return "goldfinder"
+        return "Goldfinder"
     elif "panforest" in path:
-        return "panforest"
+        return "PanForest"
     else:
-        return "unknown"
+        return "Unknown"
 
 def lookup_fluidity_openness(match_file, run_id):
     try:
@@ -63,7 +63,7 @@ def main():
     args = get_args()
 
     run_id = infer_run_id(args.infile)
-    tool = infer_tool(args.infile).capitalize()
+    tool = infer_tool(args.infile)
 
     # Count total significant pairs
     try:
@@ -88,8 +88,8 @@ def main():
         out.write(
             f"{tool}\t{run_id}\t"
             f"{total_pairs}\t"
-            f"{'' if fluidity is None else f'fluidity:.6f}'\t"
-            f"{'' if openness is None else f'openness:.6f}'\n"
+            f"{'' if fluidity is None else f'{fluidity:.6f}'}\t"
+            f"{'' if openness is None else f'{openness:.6f}'}\n"
         )
 
 if __name__ == "__main__":
