@@ -45,12 +45,21 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Input directories
-gpa_dir="real_pangenomes/gpa_matches${scope:+_${scope}}"
-nodes_dir="real_pangenomes/coinfinder_runs_${scope}"
+if [[ "$scope" == "all" ]]; then
+  gpa_dir="real_pangenomes/gpa_matches_all"
+  nodes_dir="real_pangenomes/coinfinder_runs_all"
+else
+  gpa_dir="real_pangenomes/gpa_matches"
+  nodes_dir="real_pangenomes/coinfinder_runs_${scope}"
+fi
 
 # Output base directory
 out_base="${dataset}"
-out_gpa_dir="${out_base}/gpa_matches${scope:+_${scope}}"
+if [[ "$scope" == "all" ]]; then
+  out_gpa_dir="${out_base}/gpa_matches_all"
+else
+  out_gpa_dir="${out_base}/gpa_matches"
+fi
 
 # Script path
 script="scripts/pseudo-sim/sim_pan.py"
