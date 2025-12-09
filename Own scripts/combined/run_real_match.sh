@@ -56,7 +56,7 @@ if [ "$scope" = "all" ]; then
     match_file="${dataset}/matched_all.csv"
 else
     gpa_dir="${dataset}/gpa_matches"
-    match_file="${dataset}/matched_selected.csv"
+    match_file="${dataset}/species_categories.csv"
 fi
 
 script="scripts/combined/real_match.py"
