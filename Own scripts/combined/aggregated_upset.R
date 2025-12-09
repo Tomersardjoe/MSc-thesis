@@ -156,6 +156,22 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir,
       dplyr::mutate(value = value / total)
   }
 
+  fill_values <- c(
+    Coinfinder = method_colors[["Coinfinder"]],
+    Goldfinder = method_colors[["Goldfinder"]],
+    PanForest  = method_colors[["PanForest"]]
+  )
+  breaks <- c("Coinfinder", "Goldfinder", "PanForest")
+  labels <- c(Coinfinder = "Coinfinder",
+              Goldfinder = "Goldfinder - total",
+              PanForest  = "PanForest")
+
+  if (!is.null(overlay_df) && nrow(overlay_df) > 0) {
+    fill_values["Goldfinder below D-cutoff"] <- "#9F8538"
+    breaks <- c("Coinfinder", "Goldfinder", "Goldfinder below D-cutoff", "PanForest")
+    labels["Goldfinder below D-cutoff"] <- "Goldfinder below D-cutoff"
+  }
+
   p <- ggplot(plot_df, aes(x = sets, y = value)) +
     geom_col(aes(fill = base_tool), colour = "black", linewidth = 0.2, width = 0.7,
              show.legend = c(fill = TRUE)) +
@@ -177,10 +193,10 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir,
       labels = if (relative) scales::percent_format() else scales::label_number()
     ) +
     scale_x_upset(order_by = "degree", sets = c("Coinfinder","Goldfinder","PanForest")) +
-    scale_fill_manual(name = "Method", values = method_colors, limits = names(method_colors),
-                      breaks = names(method_colors), drop = FALSE) +
     scale_pattern_manual(values = c(none = "none", stripe = "stripe", crosshatch = "crosshatch"), guide = "none") +
     scale_pattern_fill_manual(values = pattern_fill_colors, na.value = NA, guide = "none") +
+    scale_fill_manual(name = "Method", values = fill_values,
+                      breaks = breaks, labels = labels, drop = FALSE) +
     labs(x = NULL, y = ylab, title = title) +
     theme_minimal() +
     theme_combmatrix(
@@ -188,12 +204,12 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir,
       combmatrix.panel.line.size  = 0.3
     ) +
     theme(plot.title = element_text(size = 8))
-    
+
   if (!is.null(overlay_df) && nrow(overlay_df) > 0) {
     p <- p +
       geom_col(
         data = overlay_df,
-        aes(x = sets, y = value_below, fill = "Goldfinder below D-cutoff"),  # map to legend key
+        aes(x = sets, y = value_below, fill = "Goldfinder below D-cutoff"),
         colour = "black", linewidth = 0.2, width = 0.7, inherit.aes = FALSE,
         na.rm = TRUE
       ) +
@@ -205,75 +221,58 @@ make_upset_plot <- function(df2, title, ylab, outfile, method_colors, out_dir,
         label.size = 0,
         fill = "white",
         na.rm = TRUE
-      ) +
-      scale_fill_manual(
-        name   = "Method",
-        values = c(
-          Coinfinder                  = method_colors[["Coinfinder"]],
-          Goldfinder                  = method_colors[["Goldfinder"]],
-          PanForest                   = method_colors[["PanForest"]],
-          "Goldfinder below D-cutoff" = "#9F8538"
-        ),
-        breaks = c("Coinfinder", "Goldfinder", "Goldfinder below D-cutoff", "PanForest"),
-        labels = c(
-          Coinfinder                  = "Coinfinder",
-          Goldfinder                  = "Goldfinder - total",
-          "Goldfinder below D-cutoff" = "Goldfinder below D-cutoff",
-          PanForest                   = "PanForest"
-        ),
-        drop   = FALSE
       )
   }
-return(p)
+
+  return(p)
 }
 
 make_metrics_data <- function(dup_summary_run) {
   dup_summary_run %>%
-    group_by(Method, category) %>%
-    summarise(
-      precision = mean(precision, na.rm = TRUE),
-      recall    = mean(recall, na.rm = TRUE),
-      f1        = mean(f1, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    pivot_longer(
+    dplyr::filter(!(Method == "PanForest" & sim_type == "perfect")) %>%
+    tidyr::pivot_longer(
       cols = c(precision, recall, f1),
       names_to = "Metric", values_to = "Value"
     ) %>%
-    mutate(
-      Metric   = recode(Metric,
-                        precision = "Precision",
-                        recall    = "Recall",
-                        f1        = "F1"),
+    dplyr::filter(!is.na(Value)) %>%
+    dplyr::mutate(
+      Metric = dplyr::recode(Metric,
+                             precision = "Precision",
+                             recall    = "Recall",
+                             f1        = "F1"),
       Metric   = factor(Metric, levels = c("Precision", "Recall", "F1")),
       category = factor(category, levels = c("Closed", "Moderate", "Open"))
     )
 }
 
-make_metrics_plot_grouped <- function(df_metrics, method_colors, sig_levels) {
-  ymax <- max(df_metrics$Value, na.rm = TRUE)
+make_metrics_plot_grouped <- function(df_metrics_plot, method_colors, sig_levels) {
+  df_metrics_plot <- df_metrics_plot %>% dplyr::filter(!is.na(Method))
+  ymax <- max(df_metrics_plot$Value, na.rm = TRUE)  
 
-  ggplot(df_metrics, aes(x = Metric, y = Value, fill = Method)) +
+  ggplot(df_metrics_plot, aes(x = Metric, y = Value, fill = Method)) +
     geom_col(position = position_dodge(width = 0.8), colour = "black", linewidth = 0.2, width = 0.7) +
-    geom_text(aes(label = sprintf("%.2f", Value)),
-              position = position_dodge(width = 0.8),
-              vjust = -0.3, size = 2.5) +
-    geom_text(data = sig_levels,
-              aes(x = Metric, y = Value, label = signif),
-              inherit.aes = FALSE,
-              vjust = -0.3, size = 2.5) +
-    scale_y_continuous(limits = c(0, ymax + 0.15),
+  geom_text(
+    aes(label = sprintf("%.2f", Value)),
+    position = position_dodge(width = 0.8),
+    vjust = -0.5,
+    size = 2.5
+  ) +
+#    geom_text(data = sig_levels,
+#              aes(x = Metric, y = Value, label = signif),
+#              inherit.aes = FALSE,
+#              vjust = -0.3, size = 2.5) +
+    scale_y_continuous(limits = c(0, ymax + 0.25),
                        labels = scales::number_format(accuracy = 0.01),
                        breaks = scales::pretty_breaks(n = 4)) +
     scale_fill_manual(values = method_colors) +
-    facet_wrap(~ category, ncol = 1) +
+    facet_wrap(~ category, ncol = 3) +
     labs(x = NULL, y = "Performance",
          title = "Precision, Recall, and F1 per tool across categories") +
     theme_minimal() +
     theme(legend.position = "none",
           plot.title = element_text(size = 8),
           strip.text = element_text(size = 8),
-          axis.text.y = element_text(size = 5),
+          axis.text.y = element_text(size = 8),
           axis.text.x = element_text(size = 8)
     )
 }
@@ -509,6 +508,20 @@ if ("category" %in% names(all_runs)) {
 } else {
   message("No 'category' column found after join - skipping filter.")
 }
+
+# Summarise gene pairs and genes per tool, aggregated by category
+summary_stats <- all_runs %>%
+  dplyr::group_by(category, Method) %>%
+  dplyr::summarise(
+    total_gene_pairs = dplyr::n(),
+    total_genes      = dplyr::n_distinct(Gene),
+    .groups = "drop"
+  )
+
+# Save to raw_counts.tsv
+write.table(summary_stats,
+            file = file.path(out_dir, "raw_counts.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
 
 # -------------------------
 # UpSet plots
@@ -785,11 +798,11 @@ final_plot <- combined +
     legend.text = element_text(size = 8)
   )
 
-ggsave(file.path(out_dir, "gene_category.png"), final_plot,
+ggsave(file.path(out_dir, paste0("gene_category_", sim_type, ".png")), final_plot,
        width = 10, height = 5, dpi = 600, bg = "white")
 
 # Save as PDF
-ggsave(file.path(out_dir, "gene_category.pdf"), final_plot,
+ggsave(file.path(out_dir, paste0("gene_category_", sim_type, ".pdf")), final_plot,
        width = 10, height = 5, bg = "white")
 
 # Proportion of all three tool agreement to total pair pool of each category
@@ -944,11 +957,11 @@ final_plot <- combined +
   )
 
 # Save as PNG
-ggsave(file.path(out_dir, "pair_category.png"), final_plot,
+ggsave(file.path(out_dir, paste0("pair_category_", sim_type ,".png")), final_plot,
        width = 10, height = 5, dpi = 600, bg = "white")
 
 # Save as PDF
-ggsave(file.path(out_dir, "pair_category.pdf"), final_plot,
+ggsave(file.path(out_dir, paste0("pair_category_", sim_type ,".pdf")), final_plot,
        width = 10, height = 5, bg = "white")
 
 ##### PSEUDO-SIMULATED DATASETS ONLY #####
@@ -958,6 +971,31 @@ ggsave(file.path(out_dir, "pair_category.pdf"), final_plot,
 # -------------------------
 
 if (!is.null(summary_file)) {
+
+    # Collect all duplicated genes
+    dup_gene_lookup <- purrr::map_dfr(species_taxids, function(species_taxid) {
+      nodes_file <- file.path(coin_dir, species_taxid, "coincident_nodes_all.tsv")
+      if (!file.exists(nodes_file)) return(NULL)
+    
+      df <- readr::read_tsv(
+        nodes_file,
+        col_types = readr::cols(ID = readr::col_character(),
+        Result = readr::col_double()),
+        progress = FALSE
+      )
+        
+      df %>%
+        filter(str_ends(ID, "_dup")) %>%
+        mutate(species_taxid = species_taxid,
+               D_value = Result) %>%
+        select(species_taxid, ID, D_value)
+    })
+    
+    dup_totals_by_cat <- dup_gene_lookup %>%
+      dplyr::left_join(all_runs %>% dplyr::select(species_taxid, category) %>% dplyr::distinct(),
+                       by = "species_taxid") %>%
+      dplyr::filter(!is.na(category)) %>%
+      dplyr::count(category, name = "total_dup_pairs")
 
   for (cat in unique(all_runs$category)) {
     df_cat <- all_runs %>% dplyr::filter(category == cat)
@@ -984,17 +1022,28 @@ if (!is.null(summary_file)) {
   
     # Pair-level (dup pairs only)
     pairs_df <- prepare_pairs_df(df_cat)
-    
+  
     df_dup_pairs_upset <- make_upset_df(
       pairs_df, id_col = PairID,
       filter_expr = PairType == "Correct_dup_pair",
       method_order = set_order
     )
     
+    # Get total recoverable duplicated pairs for this category
+    total_dup_pairs <- dup_totals_by_cat %>%
+      dplyr::filter(category == cat) %>%
+      dplyr::pull(total_dup_pairs)
+   
+    # Get number recovered (sum of values in upset df)
+    recovered_dup_pairs <- df_dup_pairs_upset %>%
+      dplyr::summarise(total = sum(value)) %>%
+      dplyr::pull(total)
+    
     if (nrow(df_dup_pairs_upset) > 0) {
       p_pair_dup <- make_upset_plot(
         df_dup_pairs_upset,
-        paste("Proportion of duplicated pairs found -", cat, "pangenomes"),
+        paste0("Proportion of recovered duplicated\n",
+        "pairs: ", recovered_dup_pairs, " / ", total_dup_pairs, "- ", cat, " pangenomes"),
         "Pair proportion",
         paste0(cat, "_upset_pairs_dup.png"),
         method_colors, out_dir,
@@ -1017,6 +1066,10 @@ if (!is.null(summary_file)) {
   
     model <- lmer(Value ~ category + (1|Method), data = df_sub)
     anova_res <- anova(model)
+    
+    # Print the ANOVA results per metric
+    cat("\nANOVA results for", m, ":\n")
+    print(anova_res)    
   
     list(metric = m, model = model, anova = anova_res)
   })
@@ -1041,7 +1094,7 @@ if (!is.null(summary_file)) {
 
   sig_levels <- data.frame(
     Metric   = pvals_df$Metric,
-    Value    = rep(max(df_metrics$Value) + 0.005, length(pvals_df)),
+    Value    = rep(max(df_metrics$Value) + 0.005, nrow(pvals_df)),
     signif   = pvals_df$signif,
     category = "Closed"
   )
@@ -1098,11 +1151,109 @@ if (!is.null(summary_file)) {
                 sep = "\t", row.names = FALSE, quote = FALSE)
   }
   
-  # Plotting
-  p_metrics <- make_metrics_plot_grouped(df_metrics, method_colors, sig_levels)
+  # Collect found duplicated genes by the tools
+  found_lookup <- all_runs %>%
+    filter(str_ends(Gene, "_dup")) %>%
+    select(species_taxid, ID = Gene, Method, category) %>%
+    mutate(Found = TRUE)
   
-  final_plot <- (p_pair_dup_Closed | p_pair_dup_Moderate) /
-                (p_pair_dup_Open   | p_metrics)
+  # Join all and found
+  dup_gene_cat <- dup_gene_lookup %>%
+    left_join(all_runs %>% select(species_taxid, category) %>% distinct(),
+              by = "species_taxid") %>%
+    left_join(found_lookup,
+              by = c("species_taxid", "ID", "category")) %>%
+    mutate(
+      Found = ifelse(is.na(Found), FALSE, Found),
+      category = factor(category, levels = c("Closed", "Moderate", "Open"))
+    )
+  
+  # Plotting function
+  make_category_plot <- function(df, cat_name) {
+    df <- df %>% arrange(D_value) %>% mutate(order = row_number())
+  
+    ggplot(df, aes(x = order, y = D_value)) +
+      # background: all duplicated genes in light grey
+      geom_line(color = "grey85") +
+      geom_point(color = "grey85", alpha = 0.5, size = 1) +
+  
+      # overlay: only the found genes, colored by Method
+      geom_point(
+        data = filter(df, Found == TRUE),
+        aes(color = Method),
+        size = 2, alpha = 0.9
+      ) +
+      scale_color_manual(values = method_colors) +
+      labs(x = "Duplicated gene count", y = "D-value",
+      title = paste("Correctly reported duplicated genes", "-", cat_name, "category")) +
+      theme_minimal()
+  }
+
+  plots <- lapply(levels(dup_gene_cat$category), function(cat) {
+    make_category_plot(filter(dup_gene_cat, category == cat), cat)
+  })
+  
+  p_dups <- wrap_plots(plots, ncol = 1) + 
+    plot_layout(guides = "collect") +
+    plot_annotation(tag_levels = "A")
+  
+  ggsave(file.path(out_dir, paste0("dup_", sim_type, "_all_genes.png")),
+         p_dups, width = 10, height = 6, dpi = 600, bg = "white")
+         
+  # Save as PDF
+  ggsave(file.path(out_dir, paste0("dup_", sim_type, "_all_genes.pdf")),
+         p_dups, width = 10, height = 6, bg = "white")
+  
+  sim_label <- dplyr::case_when(
+    sim_type == "flip"    ~ "one-flip co-occurrence",
+    sim_type == "perfect" ~ "perfect co-occurrence",
+    TRUE                  ~ sim_type
+  )
+  
+  p_cat_method <- dup_gene_cat %>%
+    filter(!is.na(Method)) %>%
+    arrange(D_value) %>%
+    mutate(order = row_number()) %>%
+    ggplot(aes(x = order, y = D_value)) +
+      geom_line(color = "grey85") +
+      geom_point(color = "grey85", alpha = 0.5, size = 1) +
+      geom_point(
+        data = . %>% filter(Found == TRUE),
+        aes(color = Method),
+        size = 2, alpha = 0.9
+      ) +
+      scale_color_manual(values = method_colors) +
+      labs(x = "Duplicated gene count", y = "D-value",
+           title = paste("Duplicated genes reported by tools across the catgories -", sim_label)) +
+      theme_minimal() +
+      facet_grid(category ~ Method) +
+      theme(
+        strip.text.x = element_text(size = 14),
+        strip.text.y = element_text(size = 14),
+        panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5)
+      )
+ 
+  # Save PNG
+  ggsave(file.path(out_dir, paste0("dup_", sim_type, "_cat_method.png")),
+         p_cat_method, width = 12, height = 4, dpi = 600, bg = "white")
+
+  # Save PDF
+  ggsave(file.path(out_dir, paste0("dup_", sim_type, "_cat_method.pdf")),
+         p_cat_method, width = 12, height = 4, bg = "white")
+
+  # Plotting
+  
+  df_metrics_plot <- df_metrics %>%
+    dplyr::group_by(Method, category, Metric) %>%
+    dplyr::summarise(
+      Value = mean(Value, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  p_metrics <- make_metrics_plot_grouped(df_metrics_plot, method_colors, sig_levels)
+  
+  final_plot <- (p_pair_dup_Closed | p_pair_dup_Moderate | p_pair_dup_Open) /
+                p_metrics
 
   final_plot <- final_plot +
               plot_layout(guides = "collect") +
@@ -1124,19 +1275,15 @@ if (!is.null(summary_file)) {
   p_recall    <- plot_bin_metrics_cat(metrics, method_colors, "recall")
   p_f1        <- plot_bin_metrics_cat(metrics, method_colors, "f1")
 
-  p_metrics_cat <- p_precision / p_recall / p_f1 +
-    plot_annotation(tag_levels = "A")
+  p_metrics_cat <- (p_precision / p_recall / p_f1) +
+    plot_annotation(tag_levels = "A") +
     plot_layout(guides = "collect") &
     theme(legend.position = "bottom")
-  
-  ggsave(file.path(out_dir, "metrics_over_bins.png"),
-         p_metrics_cat, width = 9, height = 10, dpi = 600, bg = "white")
+
+  ggsave(file.path(out_dir, paste0("metrics_over_bins_", sim_type, ".png")),
+         p_metrics_cat, width = 8, height = 6, dpi = 600, bg = "white")
   
   # Save as PDF
-  ggsave(file.path(out_dir, "metrics_over_bins.pdf"),
-         p_metrics_cat, width = 9, height = 10, bg = "white")
-         
-  # Save just recall
-  ggsave(file.path(out_dir, "recall_over_bins.pdf"),
-         p_recall, width = 9, height = 4, bg = "white")
+  ggsave(file.path(out_dir, paste0("metrics_over_bins_", sim_type, ".pdf")),
+         p_metrics_cat, width = 8, height = 6, bg = "white")
 }
