@@ -35,13 +35,13 @@ def infer_run_id(infile):
 def infer_tool(infile):
     path = infile.lower()
     if "coinfinder" in path:
-        return "coinfinder"
+        return "Coinfinder"
     elif "goldfinder" in path:
-        return "goldfinder"
+        return "Goldfinder"
     elif "panforest" in path:
-        return "panforest"
+        return "PanForest"
     else:
-        return "unknown"
+        return "Unknown"
 
 def lookup_fluidity_openness(match_file, run_id):
     try:
@@ -78,7 +78,7 @@ def main():
     args = get_args()
 
     run_id = infer_run_id(args.infile)
-    tool = infer_tool(args.infile).capitalize()
+    tool = infer_tool(args.infile)
 
     total_dups = count_duplicates(args.dupfile)
 
