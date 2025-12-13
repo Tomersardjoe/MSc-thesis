@@ -1,0 +1,53 @@
+name: panforest
+channels:
+  - conda-forge
+  - anaconda
+  - bioconda
+dependencies:
+  - _libgcc_mutex=0.1=conda_forge
+  - _openmp_mutex=4.5=2_gnu
+  - blas=1.0=openblas
+  - bzip2=1.0.8=h4bc722e_7
+  - ca-certificates=2025.6.15=hbd8a1cb_0
+  - joblib=1.4.2=py310h06a4308_0
+  - ld_impl_linux-64=2.43=h1423503_5
+  - libblas=3.9.0=16_linux64_openblas
+  - libcblas=3.9.0=16_linux64_openblas
+  - libexpat=2.7.0=h5888daf_0
+  - libffi=3.4.6=h2dba641_1
+  - libgcc=15.1.0=h767d61c_3
+  - libgcc-ng=15.1.0=h69a702a_3
+  - libgfortran=3.0.0=1
+  - libgfortran-ng=11.2.0=h00389a5_1
+  - libgfortran5=11.2.0=h1234567_1
+  - libgomp=15.1.0=h767d61c_3
+  - liblapack=3.9.0=16_linux64_openblas
+  - liblzma=5.8.1=hb9d3cd8_2
+  - libnsl=2.0.1=hb9d3cd8_1
+  - libopenblas=0.3.21=h043d6bf_0
+  - libsqlite=3.50.1=h6cd9bfd_6
+  - libstdcxx=15.1.0=h8f9b012_3
+  - libstdcxx-ng=11.2.0=h1234567_1
+  - libuuid=2.38.1=h0b41bf4_0
+  - libxcrypt=4.4.36=hd590300_1
+  - libzlib=1.3.1=hb9d3cd8_2
+  - ncurses=6.5=h2d0b736_3
+  - numpy=2.2.6=py310hefbff90_0
+  - openssl=3.5.0=h7b32b05_1
+  - pandas=2.3.0=py310h5eaa309_0
+  - pip=25.1.1=pyh8b19718_0
+  - python=3.10.18=hd6af730_0_cpython
+  - python-dateutil=2.9.0.post0=pyhff2d567_1
+  - python-tzdata=2025.2=pyhd8ed1ab_0
+  - python_abi=3.10=7_cp310
+  - pytz=2025.2=pyhd8ed1ab_0
+  - readline=8.2=h8c095d6_2
+  - scikit-learn=1.6.1=py310h6a678d5_0
+  - scipy=1.15.2=py310h210a465_1
+  - setuptools=80.9.0=pyhff2d567_0
+  - six=1.17.0=pyhd8ed1ab_0
+  - threadpoolctl=3.5.0=py310h2f386ee_0
+  - tk=8.6.13=noxft_hd72426e_102
+  - tzdata=2025b=h78e105d_0
+  - wheel=0.45.1=pyhd8ed1ab_1
+prefix: /lustre/BIF/nobackup/sardj002/miniforge3/envs/panforest
