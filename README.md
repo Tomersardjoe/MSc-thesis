@@ -356,7 +356,7 @@ the same process happens, but now one presence or absence of a gene in a single 
 resulting output files are written to a simulated_pangenome_perfect or simulated_pangenome_flip in the root directory. These directories contain a gpa_matches subdirectory that
 contains the GPA matrices with the inserted duplicated genes.
 
-3. Repeat the co-occurrence analyses steps <a href=#gene-co-occurrence-estimation>above</a>.
+3. Repeat the co-occurrence analyses steps <a href=#gene-co-occurrence-estimation>above</a> (substituting --dataset real with --dataset perfect or --dataset flip).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
